@@ -1,17 +1,17 @@
 // lib/youtube.ts
-// Утиліта: витягує videoId з будь-якого поширеного формату YouTube-посилання.
+// Extracts a videoId from common YouTube URL formats.
 //
-// Розуміє:
-//   dQw4w9WgXcQ                                  (голий ID)
-//   https://www.youtube.com/watch?v=ID&t=30s     (звичайне, з додатковими параметрами)
-//   www.youtube.com/watch?v=ID                   (без https://)
-//   https://youtu.be/ID?si=...                   (коротке)
-//   https://m.youtube.com/watch?v=ID             (мобільне)
+// Supported formats:
+//   dQw4w9WgXcQ                                  (bare ID)
+//   https://www.youtube.com/watch?v=ID&t=30s     (standard URL with extra parameters)
+//   www.youtube.com/watch?v=ID                   (without https://)
+//   https://youtu.be/ID?si=...                   (short URL)
+//   https://m.youtube.com/watch?v=ID             (mobile)
 //   https://music.youtube.com/watch?v=ID         (YouTube Music)
 //   https://www.youtube.com/embed/ID, /shorts/ID, /live/ID, /v/ID
 //   https://www.youtube-nocookie.com/embed/ID
 
-// Справжній videoId — завжди 11 символів: літери, цифри, "-" і "_"
+// A valid videoId has 11 letters, digits, hyphens, or underscores.
 const VIDEO_ID_PATTERN = /^[\w-]{11}$/;
 
 export function isValidVideoId(value: string): boolean {
@@ -22,20 +22,20 @@ export function extractVideoId(input: string): string | null {
   const value = input.trim();
   if (!value) return null;
 
-  // 1. Користувач вставив уже готовий ID
+  // 1. The user entered a videoId directly.
   if (isValidVideoId(value)) return value;
 
-  // 2. Якщо протоколу немає ("youtube.com/..."), додаємо його, щоб URL() не падав
+  // 2. Add a protocol when the input starts with a bare domain.
   const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
 
   let url: URL;
   try {
     url = new URL(withProtocol);
   } catch {
-    return null; // це взагалі не схоже на посилання
+    return null; // This does not look like a URL.
   }
 
-  // Прибираємо префікси піддоменів: www.youtube.com, m.youtube.com, music.youtube.com
+  // Remove common YouTube subdomains.
   const host = url.hostname.replace(/^(www|m|music)\./, "");
 
   let candidate: string | null = null;
@@ -44,13 +44,13 @@ export function extractVideoId(input: string): string | null {
     // https://youtu.be/ID  ->  pathname "/ID"
     candidate = url.pathname.split("/")[1] ?? null;
   } else if (host === "youtube.com" || host === "youtube-nocookie.com") {
-    // Спочатку шукаємо ?v=ID, потім формати /embed/ID, /shorts/ID, /live/ID, /v/ID
+    // Check the v query parameter, then embed, shorts, live, and legacy URL paths.
     candidate =
       url.searchParams.get("v") ??
       url.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/?#]+)/)?.[1] ??
       null;
   }
 
-  // Повертаємо лише те, що справді виглядає як videoId
+  // Return only values that match the videoId format.
   return candidate && isValidVideoId(candidate) ? candidate : null;
 }

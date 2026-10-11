@@ -1,10 +1,10 @@
 // lib/mock-lyrics.ts
-// Макетні дані для першої версії. Рядки придумані для прикладу (це НЕ справжня пісня),
-// а таймкоди — умовні. Пізніше їх замінимо на реальні субтитри (youtube-transcript).
+// Demo data for the initial version. These sample lines and timestamps are not from a real song.
+// Real subtitles are loaded through youtube-transcript.
 
 import type { LyricLine } from "./types";
 
-// Офіційне демо-відео YouTube IFrame API. Підстав будь-який свій videoId.
+// Official YouTube IFrame API demo video. Replace this with any videoId.
 export const DEMO_VIDEO_ID = "CaCSuzR4DwM";
 
 export const MOCK_LYRICS: LyricLine[] = [

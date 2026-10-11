@@ -1,5 +1,5 @@
 // components/Header.tsx
-// Шапка сайту. Без акаунтів: логотип, вибір мов і посилання на словник.
+// Site header with the logo, language selector, and vocabulary link.
 
 import Link from "next/link";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
@@ -7,7 +7,7 @@ import VocabularyNavLink from "@/components/VocabularyNavLink";
 
 export default function Header() {
   return (
-    <header className="border-b">
+    <header className="relative z-50 border-b border-border bg-card/85 shadow-sm backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4">
         <Link href="/" className="font-semibold tracking-tight">
           LingoClips

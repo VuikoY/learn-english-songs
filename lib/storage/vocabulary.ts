@@ -1,10 +1,8 @@
 // lib/storage/vocabulary.ts
-// Словник у localStorage. Усі компоненти (кнопка збереження, сторінка словника, лічильник
-// у шапці) читають одне й те саме сховище через useSyncExternalStore, тому оновлюються разом
-// і між вкладками браузера.
+// The vocabulary is stored in localStorage. Components share the same store through
+// useSyncExternalStore, so changes appear immediately and sync across browser tabs.
 //
-// ДЛЯ МАЙБУТНЬОГО SUPABASE: публічний інтерфейс — useVocabulary(), addWord(), removeWord(),
-// isSameWord(). Коли підключимо базу, змінимо лише внутрішню реалізацію цього файлу.
+// Keep this public API stable if the storage implementation changes to Supabase.
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
@@ -15,7 +13,7 @@ import { getSupabaseUserClient } from "@/lib/supabase/client";
 const STORAGE_KEY = "lingo-clips:vocabulary";
 const CHANGE_EVENT = "lingo-clips:vocabulary-changed";
 
-// Один і той самий порожній масив — useSyncExternalStore вимагає стабільного посилання
+// useSyncExternalStore requires a stable reference for the empty snapshot.
 const EMPTY: VocabularyItem[] = [];
 
 function isVocabularyItem(value: unknown): value is VocabularyItem {
@@ -34,8 +32,18 @@ function isVocabularyItem(value: unknown): value is VocabularyItem {
   );
 }
 
-// Кеш останнього прочитаного значення: поки текст у localStorage не змінився,
-// повертаємо ТОЙ САМИЙ масив (інакше React зациклиться на перерендерах).
+function normalizeStoredVocabularyItem(value: unknown): VocabularyItem | null {
+  if (typeof value !== "object" || value === null) return null;
+  const item = value as Record<string, unknown>;
+  const normalized = {
+    ...item,
+    source_language: item.source_language === "uk" ? "ru" : item.source_language,
+    target_language: item.target_language === "uk" ? "ru" : item.target_language,
+  };
+  return isVocabularyItem(normalized) ? normalized : null;
+}
+
+// Reuse the last parsed array while localStorage is unchanged to avoid rerender loops.
 let lastRaw: string | null = null;
 let lastItems: VocabularyItem[] = EMPTY;
 
@@ -44,7 +52,7 @@ function getSnapshot(): VocabularyItem[] {
   try {
     raw = localStorage.getItem(STORAGE_KEY);
   } catch {
-    return EMPTY; // localStorage заблокований
+    return EMPTY; // localStorage is unavailable.
   }
 
   if (raw === lastRaw) return lastItems;
@@ -52,7 +60,9 @@ function getSnapshot(): VocabularyItem[] {
 
   try {
     const parsed: unknown = raw ? JSON.parse(raw) : [];
-    lastItems = Array.isArray(parsed) ? parsed.filter(isVocabularyItem) : EMPTY;
+    lastItems = Array.isArray(parsed)
+      ? parsed.map(normalizeStoredVocabularyItem).filter((item): item is VocabularyItem => item !== null)
+      : EMPTY;
   } catch {
     lastItems = EMPTY;
   }
@@ -60,8 +70,8 @@ function getSnapshot(): VocabularyItem[] {
 }
 
 function subscribe(onChange: () => void): () => void {
-  window.addEventListener(CHANGE_EVENT, onChange); // зміни в цій вкладці
-  window.addEventListener("storage", onChange); // зміни з інших вкладок
+  window.addEventListener(CHANGE_EVENT, onChange); // Changes in this tab.
+  window.addEventListener("storage", onChange); // Changes in other tabs.
   return () => {
     window.removeEventListener(CHANGE_EVENT, onChange);
     window.removeEventListener("storage", onChange);
@@ -72,7 +82,7 @@ function writeItems(items: VocabularyItem[]): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   } catch {
-    return false; // сховище заповнене або недоступне
+    return false; // Storage is full or unavailable.
   }
   window.dispatchEvent(new Event(CHANGE_EVENT));
   void syncVocabularyToSupabase(items);
@@ -111,7 +121,7 @@ function createId(): string {
 
 const normalize = (text: string) => text.trim().toLowerCase();
 
-/** Та сама фраза з тією самою мовою пояснення = дублікат. */
+/** A phrase with the same explanation language is a duplicate. */
 export function isSameWord(item: VocabularyItem, originalText: string, targetLanguage: string): boolean {
   return normalize(item.original_text) === normalize(originalText) && item.target_language === targetLanguage;
 }
@@ -125,16 +135,16 @@ export function addWord(input: NewVocabularyItem): AddResult {
   }
 
   const item: VocabularyItem = { ...input, id: createId(), created_at: new Date().toISOString() };
-  return writeItems([item, ...items]) ? "added" : "error"; // нові — на початку
+  return writeItems([item, ...items]) ? "added" : "error"; // Add new entries at the start.
 }
 
 export function removeWord(id: string): void {
   writeItems(getSnapshot().filter((item) => item.id !== id));
 }
 
-/** Хук для компонентів: актуальний список слів + функції додавання/видалення. */
+/** Hook exposing the current vocabulary and add/remove actions. */
 export function useVocabulary() {
-  // Третій аргумент — значення на сервері (там localStorage немає)
+  // The third argument is the server snapshot, where localStorage is unavailable.
   const items = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY);
   useEffect(() => {
     let active = true;
@@ -147,7 +157,9 @@ export function useVocabulary() {
         const { data, error } = await client.from("vocabulary").select("*").eq("user_id", user.id);
         if (error || !active || !data) return;
 
-        const remoteItems = data.filter(isVocabularyItem);
+        const remoteItems = data
+          .map(normalizeStoredVocabularyItem)
+          .filter((item): item is VocabularyItem => item !== null);
         const localItems = getSnapshot();
         const ids = new Set(localItems.map((item) => item.id));
         const phrases = new Set(localItems.map((item) => `${normalize(item.original_text)}::${item.target_language}`));

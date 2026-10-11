@@ -1,5 +1,5 @@
 // components/game/LetterKeyboard.tsx
-// Екранна клавіатура для режиму "Майстер перших літер" (для телефонів і тих, хто вважає за краще мишу).
+// On-screen keyboard for first-letter mode, useful on phones and for mouse users.
 "use client";
 
 import { useLanguage } from "@/context/LanguageContext";
@@ -24,7 +24,7 @@ export default function LetterKeyboard({ letters, onPress, disabled = false }: P
             type="button"
             disabled={disabled}
             onClick={() => onPress(letter)}
-            className="size-9 rounded-md border bg-background text-sm font-semibold uppercase transition hover:border-primary hover:shadow-sm active:scale-95 disabled:opacity-50"
+            className="size-9 rounded-md border bg-background text-sm font-semibold uppercase transition hover:shadow-sm active:scale-95 disabled:opacity-50"
           >
             {letter}
           </button>

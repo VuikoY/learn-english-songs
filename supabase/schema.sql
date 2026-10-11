@@ -39,12 +39,15 @@ create unique index if not exists vocabulary_user_phrase_language_idx
 
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  ui_language text not null default 'uk',
+  ui_language text not null default 'ru',
   source_language text not null default 'en',
-  target_language text not null default 'uk',
+  target_language text not null default 'ru',
   settings_json jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
+
+alter table public.user_settings alter column ui_language set default 'ru';
+alter table public.user_settings alter column target_language set default 'ru';
 
 -- Shared read/write caches contain no user data.
 alter table public.transcripts enable row level security;

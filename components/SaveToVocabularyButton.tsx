@@ -1,5 +1,5 @@
 // components/SaveToVocabularyButton.tsx
-// Зберігає фразу в локальний словник (localStorage). Входу в акаунт поки немає.
+// Saves a phrase to the local vocabulary; account sign-in is not required.
 "use client";
 
 import { useState } from "react";
@@ -10,10 +10,10 @@ import { isSameWord, useVocabulary } from "@/lib/storage/vocabulary";
 import type { Explanation } from "@/lib/types";
 
 type Props = {
-  /** Оригінальний рядок пісні. */
+  /** Original song line. */
   original: string;
   explanation: Explanation;
-  /** Назва відео (необов'язково). */
+  /** Optional video title. */
   songTitle?: string | null;
 };
 
@@ -22,8 +22,7 @@ export default function SaveToVocabularyButton({ original, explanation, songTitl
   const { items, addWord } = useVocabulary();
   const [failed, setFailed] = useState(false);
 
-  // "Збережено" визначаємо за самим сховищем, а не за локальним станом:
-  // якщо закрити й знову відкрити картку, кнопка лишиться у стані "Збережено".
+  // Derive the saved state from storage so it persists when the card is reopened.
   const isSaved = items.some((item) => isSameWord(item, original, targetLanguage));
 
   function handleSave() {

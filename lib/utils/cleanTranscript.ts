@@ -1,16 +1,15 @@
 // lib/utils/cleanTranscript.ts
-// Очищення субтитрів YouTube будь-якою мовою.
+// Clean YouTube subtitles in any language.
 //
-// ПРИБИРАЄМО:  [Music], [Música], [Singing], {noise}, (Laughter), ♪, ">>" на початку
-// ДЕКОДУЄМО:   &amp; &#39; &quot; (і подвійно закодоване &amp;#39;)
-// НЕ ЧІПАЄМО:  f*ck, sh*t, f#ck, ! ? ' , . та діакритику: ñ ä é ł ї
-//
-// Усе, що не входить у перші два пункти, лишається у тексті без змін.
+// REMOVE: [Music], [Música], [Singing], {noise}, (Laughter), ♪, and leading ">>" markers.
+// DECODE: &amp;, &#39;, &quot;, including double-encoded entities such as &amp;#39;.
+// PRESERVE: censored words, punctuation, and diacritics in lyric text.
+// Text not covered by the first two rules remains unchanged.
 
 import type { LyricLine } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
-// 1. HTML-сутності
+// 1. HTML entities.
 // ---------------------------------------------------------------------------
 
 const NAMED_ENTITIES: Record<string, string> = {
@@ -32,8 +31,8 @@ const NAMED_ENTITIES: Record<string, string> = {
 };
 
 /**
- * Перетворює "&amp;", "&#39;", "&#x27;", "&quot;" на звичайні символи.
- * Кілька проходів потрібні, бо YouTube іноді віддає "&amp;#39;" (закодовано двічі).
+ * Converts "&amp;", "&#39;", "&#x27;", and "&quot;" to their plain characters.
+ * Multiple passes handle values that YouTube has encoded more than once.
  */
 export function decodeHtmlEntities(input: string): string {
   let current = input;
@@ -50,7 +49,7 @@ export function decodeHtmlEntities(input: string): string {
       return NAMED_ENTITIES[body.toLowerCase()] ?? match;
     });
 
-    if (next === current) break; // більше нічого декодувати
+    if (next === current) break; // Nothing else to decode.
     current = next;
   }
 
@@ -58,12 +57,11 @@ export function decodeHtmlEntities(input: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Слухові позначки
+// 2. Audio and performance markers.
 // ---------------------------------------------------------------------------
 
-// У ЗВИЧАЙНИХ дужках можуть бути і справжні слова пісні: "(I can't get no) satisfaction".
-// Тому круглі дужки видаляємо, тільки якщо вони схожі на звукову позначку:
-// коротко (до 4 слів) і є слово-ознака: music, laughter, risas, śmiech, сміх...
+// Parentheses can contain actual lyrics, so remove them only when they look like an audio marker:
+// at most four words and containing a known marker such as music, laughter, or singing.
 const CUE_STEMS = [
   "music", "músic", "muzyk", "музик",
   "laugh", "śmiech", "сміх", "смiх",
@@ -83,36 +81,35 @@ const CUE_EXACT = new Set([
 ]);
 
 function isSoundCue(content: string): boolean {
-  // Розбиваємо на слова по будь-чому, що не є літерою (працює для кирилиці та діакритики)
+  // Split on non-letter characters; Unicode property escapes support Cyrillic and diacritics.
   const words = content.toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
 
-  if (words.length === 0) return true; // "(...)", "(?)" — просто шум
-  if (words.length > 4) return false; // довге — це, найімовірніше, текст пісні
+  if (words.length === 0) return true; // "(...)" and "(?)" contain no lyric words.
+  if (words.length > 4) return false; // Longer text is more likely to be a lyric.
 
   return words.some((w) => CUE_EXACT.has(w) || CUE_STEMS.some((stem) => w.startsWith(stem)));
 }
 
 // ---------------------------------------------------------------------------
-// 3. Головна функція для одного рядка
+// 3. Main function for one transcript line.
 // ---------------------------------------------------------------------------
 
 export function cleanTranscriptLine(input: string): string {
   const decoded = decodeHtmlEntities(input).normalize("NFC");
 
   let text = decoded
-    // [Music] [Música] [Singing] 【...】 {noise} — квадратні, фігурні та повноширинні дужки
-    // у субтитрах ВЖЕ є позначками, тому прибираємо їх повністю
+    // Markers enclosed in square, curly, or full-width brackets are removed entirely.
     .replace(/\[[^\]]*\]|【[^】]*】|\{[^}]*\}/g, "")
-    // Позначка, розрізана між двома рядками: "[Music" без закриття або "]" без відкриття
+    // Handle a marker split across transcript lines, such as "[Music" or "]".
     .replace(/\[[^\]]*$/, "")
     .replace(/^[^[\]]*\]/, "")
-    // Круглі дужки — лише якщо це звукова позначка
+    // Remove parentheses only when they contain an audio marker.
     .replace(/[(（]([^()（）]*)[)）]/g, (match, content: string) => (isSoundCue(content) ? "" : match))
-    // Музичні символи та маркер зміни мовця
+    // Remove music symbols and speaker-change markers.
     .replace(/[♪♫♬♩🎵🎶]+/gu, "")
     .replace(/^\s*>>+\s*/, "");
 
-  // Якщо щось вирізали — прибираємо пробіл перед пунктуацією: "Forever , trusting" -> "Forever, trusting"
+  // Remove spaces before punctuation after deleting a marker.
   if (text !== decoded) {
     text = text.replace(/\s+([,.!?;:])/g, "$1");
   }
@@ -121,10 +118,10 @@ export function cleanTranscriptLine(input: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Очищення всього масиву
+// 4. Clean the full array.
 // ---------------------------------------------------------------------------
 
-/** Очищає кожен рядок і викидає ті, що стали порожніми (там було лише [Music]). */
+/** Cleans every line and removes entries that become empty. */
 export function cleanTranscript(lines: LyricLine[]): LyricLine[] {
   return lines
     .map((line) => ({ ...line, text: cleanTranscriptLine(line.text) }))

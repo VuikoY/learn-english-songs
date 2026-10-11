@@ -69,7 +69,7 @@ export default function LanguageSwitcher() {
   }, []);
 
   return (
-    // <details> — вбудований у браузер випадаючий блок, JS для відкриття не потрібен
+    // The native details element provides disclosure behavior without JavaScript.
     <details ref={menuRef} className="relative">
       <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-sm hover:bg-muted [&::-webkit-details-marker]:hidden">
         <Globe className="size-4" aria-hidden />
@@ -79,7 +79,7 @@ export default function LanguageSwitcher() {
         <span className="sr-only">{t("lang.settings")}</span>
       </summary>
 
-      <div className="absolute right-0 z-50 mt-2 w-64 space-y-3 rounded-xl border bg-popover p-3 shadow-lg">
+      <div className="absolute right-0 z-50 mt-2 w-64 space-y-3 rounded-xl border bg-background p-3 shadow-lg">
         <LanguageField id="lang-ui" label={t("lang.ui")} value={uiLanguage} onChange={setUiLanguage} />
         <LanguageField
           id="lang-target"

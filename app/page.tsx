@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,8 +17,6 @@ type View = "read" | "play";
 
 export default function HomePage() {
   const { t, sourceLanguage } = useLanguage();
-
-  // Спочатку показуємо демо (MOCK_LYRICS); після завантаження свого відео все замінюється
   const [videoId, setVideoId] = useState(DEMO_VIDEO_ID);
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
@@ -28,44 +25,29 @@ export default function HomePage() {
     "lingo-clips:active-view",
     "read",
     (value): value is View => value === "read" || value === "play",
-  ); // Запам’ятовує, чи користувач обрав текст або гру.
+  );
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const playerRef = useRef<PlayerHandle>(null);
-  const pausePlayer = useCallback(() => playerRef.current?.pause(), []);
-  const volumeRampRef = useRef<{ target: number; normalVolume: number; startedAt?: number; startVolume?: number } | null>(null);
-  useEffect(() => {
-    const ramp = volumeRampRef.current;
-    const player = playerRef.current;
-    if (!ramp || !player || currentTime < ramp.target) return;
+  const volumeFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const normalVolumeRef = useRef<number | null>(null);
 
-    if (ramp.startedAt === undefined) {
-      ramp.startedAt = performance.now();
-      ramp.startVolume = player.getVolume();
+  const clearVolumeFade = useCallback(() => {
+    if (volumeFadeRef.current !== null) {
+      clearInterval(volumeFadeRef.current);
+      volumeFadeRef.current = null;
     }
+  }, []);
 
-    const intervalId = window.setInterval(() => {
-      const activeRamp = volumeRampRef.current;
-      if (!activeRamp || activeRamp.startedAt === undefined) {
-        window.clearInterval(intervalId);
-        return;
-      }
+  useEffect(() => clearVolumeFade, [clearVolumeFade]);
 
-      const progress = Math.min((performance.now() - activeRamp.startedAt) / 1000, 1);
-      const startVolume = activeRamp.startVolume ?? activeRamp.normalVolume * 0.5;
-      player.setVolume(startVolume + (activeRamp.normalVolume - startVolume) * progress);
-
-      if (progress >= 1) {
-        window.clearInterval(intervalId);
-        volumeRampRef.current = null;
-      }
-    }, 50);
-
-    return () => window.clearInterval(intervalId);
-  }, [currentTime]);
-
+  const pausePlayer = useCallback(() => {
+    clearVolumeFade();
+    if (normalVolumeRef.current !== null) playerRef.current?.setVolume(normalVolumeRef.current);
+    playerRef.current?.pause();
+  }, [clearVolumeFade]);
   function playFrom(seconds: number) {
     playerRef.current?.seekTo(seconds);
     playerRef.current?.play();
@@ -74,19 +56,46 @@ export default function HomePage() {
   const playGameLine = useCallback((seconds: number) => {
     const player = playerRef.current;
     if (!player) return;
-    const normalVolume = volumeRampRef.current?.normalVolume ?? player.getVolume();
-    volumeRampRef.current = { target: seconds, normalVolume };
-    player.setVolume(normalVolume * 0.5);
+
+    clearVolumeFade();
+    if (normalVolumeRef.current === null) normalVolumeRef.current = player.getVolume();
+    const normalVolume = normalVolumeRef.current;
+
+    player.setVolume(0);
     player.seekTo(Math.max(0, seconds - 1));
     player.play();
-  }, []);
+
+    const fadeStartedAt = performance.now();
+    volumeFadeRef.current = setInterval(() => {
+      const progress = Math.min((performance.now() - fadeStartedAt) / 1000, 1);
+      player.setVolume(Math.round(normalVolume * progress));
+      if (progress >= 1) clearVolumeFade();
+    }, 50);
+  }, [clearVolumeFade]);
+
+  const fadeOutGameLine = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    clearVolumeFade();
+    const startVolume = player.getVolume();
+    const fadeStartedAt = performance.now();
+    volumeFadeRef.current = setInterval(() => {
+      const progress = Math.min((performance.now() - fadeStartedAt) / 1000, 1);
+      player.setVolume(Math.round(startVolume * (1 - progress)));
+      if (progress >= 1) clearVolumeFade();
+    }, 50);
+  }, [clearVolumeFade]);
+
+  const cancelGameLineFadeOut = useCallback(() => {
+    clearVolumeFade();
+    if (normalVolumeRef.current !== null) playerRef.current?.setVolume(normalVolumeRef.current);
+  }, [clearVolumeFade]);
 
   function showVideo(id: string, newLines: LyricLine[]) {
     setVideoId(id);
     setLines(newLines);
     setCurrentTime(0);
-
-    // Назву беремо "у фоні": якщо не вийде — просто лишаємо null
     setSongTitle(null);
     fetch(`/api/video-title?videoId=${id}`)
       .then((res) => res.json())
@@ -96,40 +105,34 @@ export default function HomePage() {
 
   async function handleLoad(id: string) {
     setError(null);
-
-    // 1. Уже завантажували це відео цією мовою пісні? Беремо з кешу браузера.
     const cached = getCachedTranscript(id, sourceLanguage);
     if (cached) {
       showVideo(id, cached);
       return;
     }
-
-    // 2. Інакше просимо сервер (lang = мова пісні: від неї залежить, які субтитри віддасть YouTube)
     setIsLoading(true);
     try {
       const response = await fetch(`/api/transcript?videoId=${id}&lang=${sourceLanguage}`);
-
-      // Читаємо як текст, щоб не впасти з "Unexpected token <", якщо прийшов HTML
       const raw = await response.text();
       let json: unknown;
       try {
         json = JSON.parse(raw);
       } catch {
         throw new Error(
-          `Сервер повернув не JSON (статус ${response.status}). Дивись помилку в терміналі, де запущений npm run dev.`,
+          `Сервер вернул не JSON (статус ${response.status}). Проверь ошибку в терминале, где запущен npm run dev.`,
         );
       }
 
       if (!response.ok) {
         const message = (json as { error?: string }).error;
-        throw new Error(message ?? "Помилка завантаження субтитрів");
+        throw new Error(message ?? "Не удалось загрузить субтитры.");
       }
 
       const newLines = json as LyricLine[];
       cacheTranscript(id, sourceLanguage, newLines);
       showVideo(id, newLines);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Невідома помилка");
+      setError(e instanceof Error ? e.message : "Неизвестная ошибка.");
     } finally {
       setIsLoading(false);
     }
@@ -137,7 +140,6 @@ export default function HomePage() {
 
   useEffect(() => {
     void handleLoad(DEMO_VIDEO_ID);
-    // Reload the default video when the selected song language changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceLanguage]);
 
@@ -152,7 +154,6 @@ export default function HomePage() {
         <YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} />
 
         <div className="space-y-3">
-          {/* Перемикач "Текст / Гра" */}
           <div className="flex gap-2">
             <Button
               type="button"
@@ -175,8 +176,6 @@ export default function HomePage() {
               {t("nav.play")}
             </Button>
           </div>
-
-          {/* Текст лишаємо в DOM, лише ховаємо: так не губиться стан відкритих пояснень */}
           <div className={view === "read" ? "" : "hidden"}>
             <InteractiveLyrics
               lines={lines}
@@ -186,9 +185,7 @@ export default function HomePage() {
               onExplainStart={pausePlayer}
             />
           </div>
-
-          {/* Гру показуємо лише коли вона активна (вона слухає клавіатуру). key скидає її для нового відео */}
-          {view === "play" && <GameMode key={videoId} lines={lines} currentTime={currentTime} songTitle={songTitle} onPlayLine={playGameLine} onPause={pausePlayer} />}
+          {view === "play" && <GameMode key={videoId} lines={lines} currentTime={currentTime} songTitle={songTitle} onPlayLine={playGameLine} onPause={pausePlayer} onFadeOut={fadeOutGameLine} onCancelFadeOut={cancelGameLineFadeOut} />}
         </div>
       </div>
     </main>

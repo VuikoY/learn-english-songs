@@ -1,5 +1,5 @@
 // components/VocabularyCard.tsx
-// Картка однієї збереженої фрази зі словника.
+// Card displaying one saved vocabulary phrase.
 "use client";
 
 import { Music2, Trash2 } from "lucide-react";
@@ -32,7 +32,7 @@ export default function VocabularyCard({ item }: { item: VocabularyItem }) {
         data={{ translation: item.translation, grammar: item.grammar, slang: item.slang }}
       />
 
-      {/* mt-auto притискає нижню панель до низу картки, щоб у сітці всі картки були охайні */}
+      {/* Keep the footer aligned at the bottom of each card in the grid. */}
       <footer className="mt-auto flex items-center justify-between border-t pt-3">
         <time dateTime={item.created_at} className="text-xs text-muted-foreground">
           {date}

@@ -6,7 +6,7 @@ import type { BankItem } from "@/types/game";
 
 type Props = {
   items: BankItem[];
-  /** Користувач клікнув на слово. Перевірку "правильно/ні" робить батьківський компонент. */
+  /** Called when a word is selected; the parent validates the answer. */
   onPick: (item: BankItem) => void;
   disabled?: boolean;
 };
@@ -27,8 +27,8 @@ export default function WordBank({ items, onPick, disabled = false }: Props) {
             onClick={() => onPick(item)}
             className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
               item.used
-                ? "cursor-default border-transparent bg-muted text-muted-foreground/50 line-through"
-                : "bg-background hover:-translate-y-0.5 hover:border-primary hover:shadow-sm active:translate-y-0"
+                ? "cursor-default bg-muted text-muted-foreground/50 line-through"
+                : "bg-background hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0"
             }`}
           >
             {item.text}

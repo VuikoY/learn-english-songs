@@ -1,51 +1,51 @@
 // types/game.ts
-// Усі типи й константи, спільні для мов, гри та API.
+// Shared types and constants for languages, the game, and API routes.
 
-// ============================== МОВИ ==============================
+// ============================== LANGUAGES ==============================
 
-// "uk" — це ISO-код української (на кнопках показуємо "UA")
-export const LANGUAGE_CODES = ["uk", "en", "pl", "es"] as const;
+// Language codes follow ISO 639-1. Buttons display the matching short labels.
+export const LANGUAGE_CODES = ["ru", "en", "pl", "es"] as const;
 export type Language = (typeof LANGUAGE_CODES)[number];
 
 export type LanguageInfo = {
   code: Language;
-  label: string; // коротка позначка для UI: UA, EN, PL, ES
-  nativeName: string; // як мова називає сама себе
-  englishName: string; // англійською — підставляємо в промпт для Gemini
+  label: string; // Short label displayed in the UI.
+  nativeName: string; // Language name in that language.
+  englishName: string; // English name used in Gemini prompts.
 };
 
 export const LANGUAGES: Record<Language, LanguageInfo> = {
-  uk: { code: "uk", label: "UA", nativeName: "Українська", englishName: "Ukrainian" },
+  ru: { code: "ru", label: "RU", nativeName: "Русский", englishName: "Russian" },
   en: { code: "en", label: "EN", nativeName: "English", englishName: "English" },
   pl: { code: "pl", label: "PL", nativeName: "Polski", englishName: "Polish" },
   es: { code: "es", label: "ES", nativeName: "Español", englishName: "Spanish" },
 };
 
-/** Type guard: перевіряє, що довільне значення (наприклад, із запиту) — підтримувана мова. */
+/** Type guard that checks whether an arbitrary value is a supported language. */
 export function isLanguage(value: unknown): value is Language {
   return typeof value === "string" && (LANGUAGE_CODES as readonly string[]).includes(value);
 }
 
-/** Три незалежні налаштування мов (див. LanguageContext). */
+/** The three independent language preferences used by LanguageContext. */
 export type LanguageSettings = {
-  uiLanguage: Language; // мова інтерфейсу
-  targetLanguage: Language; // мова пояснень і перекладу (їх генерує Gemini)
-  sourceLanguage: Language; // мова пісні
+  uiLanguage: Language; // Interface language.
+  targetLanguage: Language; // Language used for explanations and translations.
+  sourceLanguage: Language; // Language of the song.
 };
 
-// ============================== СКЛАДНІСТЬ ==============================
+// ============================== DIFFICULTY ==============================
 
 export type Difficulty = "easy" | "medium" | "hard";
 export const DIFFICULTIES: readonly Difficulty[] = ["easy", "medium", "hard"];
 
-/** Яку частку слів у рядку ховаємо. */
+/** Proportion of words hidden in a line at each difficulty level. */
 export const HIDE_RATIO: Record<Difficulty, number> = {
   easy: 0.15,
   medium: 0.35,
   hard: 1,
 };
 
-// ============================== ГРА ==============================
+// ============================== GAME ==============================
 
 export type GameModeId = "fill-blanks" | "first-letter";
 export type GamePhase = "setup" | "playing" | "finished";
@@ -55,42 +55,42 @@ export type GameSettings = {
   difficulty: Difficulty;
 };
 
-/** Множник очок: 1x, 1.5x або 2x залежно від серії. */
+/** Score multiplier based on the current streak. */
 export type Multiplier = 1 | 1.5 | 2;
 
 export interface GameState {
   score: number;
-  streak: number; // правильних відповідей поспіль
+  streak: number; // Consecutive correct answers.
   maxStreak: number;
   multiplier: Multiplier;
-  correct: number; // усього правильних
-  mistakes: number; // усього помилок
+  correct: number; // Total correct answers.
+  mistakes: number; // Total mistakes.
 }
 
 export type GameAction = { type: "correct" } | { type: "wrong" } | { type: "reset" };
 
-/** Одне слово рядка. Пунктуацію (leading/trailing) відділяємо від самого слова (core). */
+/** A line token with punctuation separated from the word itself. */
 export interface WordToken {
   id: number;
-  raw: string; // як у тексті: "(Don't,"
-  leading: string; // пунктуація перед словом: "("
-  core: string; // саме слово: "Don't"  (апострофи й символи цензури всередині лишаються)
-  trailing: string; // пунктуація після слова: ","
-  hidden: boolean; // чи сховане в цьому раунді
+  raw: string; // Original token, for example "(Don't,".
+  leading: string; // Punctuation before the word, for example "(".
+  core: string; // Word content; internal apostrophes and censor symbols are preserved.
+  trailing: string; // Punctuation after the word, for example ",".
+  hidden: boolean; // Whether this token is hidden in the current round.
 }
 
-/** Кнопка в банку слів. */
+/** A selectable word-bank item. */
 export interface BankItem {
   id: string;
   text: string;
-  used: boolean; // уже вставлене в пропуск
-  isDistractor: boolean; // хибне слово-манок
+  used: boolean; // Whether it has already filled a blank.
+  isDistractor: boolean; // Whether it is a distractor.
 }
 
-/** Один раунд = один рядок пісні. */
+/** One round corresponds to one song line. */
 export interface Round {
-  lineIndex: number; // індекс у масиві lines
+  lineIndex: number; // Index in the lines array.
   tokens: WordToken[];
-  bank: BankItem[]; // порожній у режимі first-letter
-  filledIds: number[]; // id вже відкритих слів
+  bank: BankItem[]; // Empty in first-letter mode.
+  filledIds: number[]; // IDs of words already revealed.
 }

@@ -1,6 +1,6 @@
 // app/api/transcript/route.ts
-// GET /api/transcript?videoId=XXXXXXXXXXX&lang=en  ->  LyricLine[]
-// lang — мова пісні. Субтитри очищаємо (cleanTranscript). Кеш поки що клієнтський (transcriptCache).
+// GET /api/transcript?videoId=XXXXXXXXXXX&lang=en -> LyricLine[]
+// lang is the song language. Transcript lines are cleaned before being returned.
 
 import { NextResponse } from "next/server";
 import { YoutubeTranscript } from "youtube-transcript";
@@ -16,10 +16,10 @@ export async function GET(request: Request) {
   const lang = params.get("lang") ?? "en";
 
   if (!videoId || !isValidVideoId(videoId)) {
-    return NextResponse.json({ error: "Некоректний videoId" }, { status: 400 });
+    return NextResponse.json({ error: "Некорректный videoId." }, { status: 400 });
   }
   if (!isLanguage(lang)) {
-    return NextResponse.json({ error: "Непідтримувана мова пісні" }, { status: 400 });
+    return NextResponse.json({ error: "Неподдерживаемый язык песни." }, { status: 400 });
   }
 
   try {
@@ -40,11 +40,11 @@ export async function GET(request: Request) {
     const items = await YoutubeTranscript.fetchTranscript(videoId, { lang });
 
     if (items.length === 0) {
-      return NextResponse.json({ error: "У цього відео порожні субтитри" }, { status: 404 });
+      return NextResponse.json({ error: "В этом видео нет субтитров." }, { status: 404 });
     }
 
-    // Залежно від версії бібліотеки час приходить у секундах або в мілісекундах.
-    // Рядок субтитрів триває 1–10 с, тож якщо медіана > 30 — це мілісекунди.
+    // Depending on the library version, timestamps may be in seconds or milliseconds.
+    // Subtitle lines usually last 1–10 seconds, so a median above 30 indicates milliseconds.
     const durations = items.map((i) => i.duration).sort((a, b) => a - b);
     const median = durations[Math.floor(durations.length / 2)];
     const divider = median > 30 ? 1000 : 1;
@@ -55,11 +55,11 @@ export async function GET(request: Request) {
       duration: item.duration / divider,
     }));
 
-    // Декодування сутностей + видалення [Music], (Laughter) тощо (див. lib/utils/cleanTranscript.ts)
+    // Decode entities and remove markers such as [Music] and (Laughter).
     const lines = cleanTranscript(rawLines);
 
     if (lines.length === 0) {
-      return NextResponse.json({ error: "Після очищення субтитрів не лишилось тексту" }, { status: 404 });
+      return NextResponse.json({ error: "После очистки субтитров не осталось текста." }, { status: 404 });
     }
 
     if (supabase) {
@@ -76,7 +76,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Не вдалося отримати субтитри. Імовірно, у відео немає субтитрів обраною мовою пісні або вони вимкнені.",
+          "Не удалось получить субтитры. Возможно, в видео нет субтитров на выбранном языке или они отключены.",
       },
       { status: 404 },
     );

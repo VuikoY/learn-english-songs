@@ -1,5 +1,5 @@
 // components/VocabularyNavLink.tsx
-// Посилання на словник у шапці з лічильником збережених фраз.
+// Header link to the vocabulary with a saved-phrase count.
 "use client";
 
 import Link from "next/link";
@@ -17,7 +17,7 @@ export default function VocabularyNavLink() {
       <BookMarked className="size-4" />
       {t("nav.vocabulary")}
       {items.length > 0 && (
-        <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">{items.length}</span>
+        <span className="rounded bg-primary px-1.5 text-xs text-primary-foreground">{items.length}</span>
       )}
     </Link>
   );

@@ -3,8 +3,8 @@
 //   { "text": "...", "sourceLanguage": "en", "targetLanguage": "pl" }
 //   -> { "translation": "...", "grammar": "...", "slang": "..." }
 //
-// MOCK_AI=true у .env.local -> повертаємо готові демо-пояснення без звернення до Gemini.
-// Кеш пояснень зараз живе в браузері (localStorage, див. InteractiveLyrics); серверний кеш додамо з базою.
+// MOCK_AI=true in .env.local returns demo explanations without calling Gemini.
+// Explanation results are cached in the browser; server-side caching uses Supabase.
 
 import { NextResponse } from "next/server";
 import { mockExplanation } from "@/lib/mock/explanations";
@@ -16,7 +16,7 @@ const MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const MAX_TEXT_LENGTH = 300;
 
-/** Інструкція для моделі. Мови підставляємо за кодом, довільний текст від клієнта сюди не потрапляє. */
+/** Builds a prompt from supported language names without including arbitrary client text. */
 function buildSystemPrompt(source: Language, target: Language, hasContext: boolean): string {
   const sourceName = LANGUAGES[source].englishName;
   const targetName = LANGUAGES[target].englishName;
@@ -43,12 +43,12 @@ const RESPONSE_SCHEMA = {
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function POST(request: Request) {
-  // ---------- 1. Валідація запиту ----------
+  // ---------- 1. Validate the request ----------
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Некоректний JSON" }, { status: 400 });
+    return NextResponse.json({ error: "Некорректный JSON." }, { status: 400 });
   }
 
   const input = (body ?? {}) as { text?: unknown; sourceLanguage?: unknown; targetLanguage?: unknown; context?: unknown };
@@ -56,19 +56,19 @@ export async function POST(request: Request) {
   const context = typeof input.context === "string" ? input.context.trim().slice(0, 500) : "";
 
   if (!text) {
-    return NextResponse.json({ error: "Поле text порожнє" }, { status: 400 });
+    return NextResponse.json({ error: "Поле text не должно быть пустым." }, { status: 400 });
   }
   if (text.length > MAX_TEXT_LENGTH) {
     return NextResponse.json(
-      { error: `Рядок задовгий (максимум ${MAX_TEXT_LENGTH} символів)` },
+      { error: `Строка слишком длинная (максимум ${MAX_TEXT_LENGTH} символов).` },
       { status: 400 },
     );
   }
 
   const sourceLanguage = input.sourceLanguage ?? "en";
-  const targetLanguage = input.targetLanguage ?? "uk";
+  const targetLanguage = input.targetLanguage ?? "ru";
   if (!isLanguage(sourceLanguage) || !isLanguage(targetLanguage)) {
-    return NextResponse.json({ error: "Непідтримувана мова" }, { status: 400 });
+    return NextResponse.json({ error: "Неподдерживаемый язык." }, { status: 400 });
   }
 
   let supabase: Awaited<ReturnType<typeof createSupabaseServerClient>> = null;
@@ -103,9 +103,9 @@ export async function POST(request: Request) {
     } catch { /* Do not fail the AI response when cache writes fail. */ }
   }
 
-  // ---------- 2. Мок-режим ----------
+  // ---------- 2. Mock mode ----------
   if (process.env.MOCK_AI === "true") {
-    await delay(700); // імітуємо затримку мережі, щоб було видно скелетон-анімацію
+    await delay(700); // Simulate network latency so the loading skeleton is visible.
     const explanation = mockExplanation(text, targetLanguage);
     await cacheExplanation(explanation);
     return NextResponse.json(explanation);
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || /^(your|replace|example|placeholder|gemini_api_key|api[_ -]?key)/i.test(apiKey)) {
     return NextResponse.json(
-      { error: "GEMINI_API_KEY у .env.local відсутній або містить шаблон. Встав дійсний ключ і перезапусти dev-сервер." },
+      { error: "GEMINI_API_KEY отсутствует в .env.local или содержит шаблон. Укажи действительный ключ и перезапусти dev-сервер." },
       { status: 500 },
     );
   }
@@ -141,8 +141,8 @@ export async function POST(request: Request) {
     if (!geminiResponse.ok) {
       console.error("Gemini request rejected with status:", geminiResponse.status);
       const error = geminiResponse.status === 400 || geminiResponse.status === 403
-        ? "Gemini відхилив API key або доступ до моделі. Перевір ключ і його дозволи в Google AI Studio."
-        : "AI-сервіс тимчасово недоступний, спробуй ще раз.";
+        ? "Gemini отклонил API-ключ или доступ к модели. Проверь ключ и его разрешения в Google AI Studio."
+        : "Сервис ИИ временно недоступен. Попробуй ещё раз.";
       return NextResponse.json(
         { error },
         { status: 502 },
@@ -151,15 +151,15 @@ export async function POST(request: Request) {
 
     const data = await geminiResponse.json();
     const rawJson: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawJson) throw new Error("Порожня відповідь від моделі");
+    if (!rawJson) throw new Error("Модель вернула пустой ответ.");
 
     const parsed: unknown = JSON.parse(rawJson);
-    if (!isExplanation(parsed)) throw new Error("Невалідна структура відповіді");
+    if (!isExplanation(parsed)) throw new Error("Модель вернула ответ в неожиданном формате.");
 
     await cacheExplanation(parsed);
     return NextResponse.json(parsed);
   } catch (error) {
     console.error("Explain route failed:", error);
-    return NextResponse.json({ error: "Не вдалося обробити відповідь AI" }, { status: 500 });
+    return NextResponse.json({ error: "Не удалось обработать ответ ИИ." }, { status: 500 });
   }
 }

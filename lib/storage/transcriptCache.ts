@@ -1,6 +1,6 @@
 // lib/storage/transcriptCache.ts
-// Кеш завантажених субтитрів у localStorage: те саме відео + мова пісні не вантажимо вдруге.
-// Зберігаємо останні 10 відео. Працює лише в браузері.
+// Cache transcripts in localStorage by video and song language to avoid refetching them.
+// Keep the ten most recently used videos. This cache is browser-only.
 
 import type { LyricLine } from "@/lib/types";
 
@@ -41,6 +41,6 @@ export function cacheTranscript(videoId: string, lang: string, lines: LyricLine[
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   } catch {
-    // сховище заповнене — кеш не критичний
+    // Caching is optional if storage is full.
   }
 }

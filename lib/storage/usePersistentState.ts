@@ -1,12 +1,11 @@
 // lib/storage/usePersistentState.ts
-// useState, значення якого зберігається в localStorage.
+// useState whose value is persisted in localStorage.
 "use client";
 
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 /**
- * @param validate необов'язкова перевірка прочитаного значення: якщо в localStorage лежить
- *                 сміття (стара версія, ручна правка), ми його ігноруємо замість того, щоб зламати рендер.
+ * @param validate Optional validator for stored values. Invalid or outdated data is ignored.
  */
 export function usePersistentState<T>(
   key: string,
@@ -14,10 +13,10 @@ export function usePersistentState<T>(
   validate?: (value: unknown) => value is T,
 ): [T, Dispatch<SetStateAction<T>>] {
   const [value, setValue] = useState<T>(initialValue);
-  // Поки не прочитали localStorage, нічого в нього не пишемо (щоб не затерти збережене початковим значенням)
+  // Wait for the stored value before writing, so the initial state cannot overwrite it.
   const [hydrated, setHydrated] = useState(false);
 
-  // Читаємо ПІСЛЯ монтування: на сервері localStorage немає, а перший рендер має збігатися з серверним HTML
+  // Read after mount because localStorage is unavailable during server rendering.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
@@ -26,10 +25,10 @@ export function usePersistentState<T>(
         if (!validate || validate(parsed)) setValue(parsed as T);
       }
     } catch {
-      // пошкоджений JSON або заблокований localStorage — лишаємо початкове значення
+      // Keep the initial value if JSON is invalid or localStorage is unavailable.
     }
     setHydrated(true);
-    // validate навмисно не в залежностях: це стабільна функція, а перечитувати сховище при її зміні не треба
+    // The validator is stable and does not need to trigger another storage read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
@@ -38,14 +37,14 @@ export function usePersistentState<T>(
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch {
-      // сховище заповнене або недоступне — просто не зберігаємо
+      // Skip persistence when storage is full or unavailable.
     }
   }, [key, value, hydrated]);
 
   return [value, setValue];
 }
 
-/** Лишає в об'єкті не більше max останніх записів (щоб кеш не розростався безмежно). */
+/** Keeps at most max recent entries so the cache stays bounded. */
 export function capEntries<V>(record: Record<string, V>, max: number): Record<string, V> {
   const keys = Object.keys(record);
   if (keys.length <= max) return record;

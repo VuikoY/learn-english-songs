@@ -16,8 +16,8 @@ import { getSupabaseUserClient } from "@/lib/supabase/client";
 const STORAGE_KEY = "lingo-clips:language-settings";
 
 const DEFAULT_SETTINGS: LanguageSettings = {
-  uiLanguage: "uk",
-  targetLanguage: "uk",
+  uiLanguage: "ru",
+  targetLanguage: "ru",
   sourceLanguage: "en",
 };
 

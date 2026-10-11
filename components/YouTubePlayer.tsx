@@ -1,5 +1,5 @@
 // components/YouTubePlayer.tsx
-"use client"; // react-youtube працює з браузером (iframe), тому це клієнтський компонент
+"use client"; // react-youtube uses a browser iframe, so this must be a client component.
 
 import {
   forwardRef,
@@ -11,7 +11,7 @@ import {
 import YouTube, { type YouTubeEvent, type YouTubePlayer as YTPlayer } from "react-youtube";
 
 /**
- * Методи, які батьківський компонент зможе викликати через ref:
+ * Methods exposed to the parent component through a ref:
  *   playerRef.current?.pause()
  */
 export type PlayerHandle = {
@@ -24,27 +24,27 @@ export type PlayerHandle = {
 
 type Props = {
   videoId: string;
-  /** Викликається ~4 рази на секунду, поки відео грає. */
+  /** Called about four times per second while the video is playing. */
   onTimeUpdate?: (seconds: number) => void;
-  /** Викликається, коли відео почало грати (true) або стало на паузу (false). */
+  /** Called when playback starts (true) or pauses (false). */
   onPlayingChange?: (isPlaying: boolean) => void;
 };
 
-// Коди станів плеєра з документації YouTube IFrame API
+// Player state codes from the YouTube IFrame API.
 const STATE_PLAYING = 1;
 
-// Як часто опитуємо поточний час, мс. 250 мс — достатньо плавно для субтитрів.
+// Poll the current time every 250 ms, which is sufficient for subtitle updates.
 const POLL_INTERVAL_MS = 250;
 
 const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   { videoId, onTimeUpdate, onPlayingChange },
   ref,
 ) {
-  // Тут зберігаємо екземпляр YouTube-плеєра, коли він готовий
+  // Store the YouTube player instance when it becomes ready.
   const playerRef = useRef<YTPlayer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Відкриваємо батьківському компоненту play / pause / seekTo
+  // Expose play, pause, seekTo, and volume controls to the parent component.
   useImperativeHandle(
     ref,
     () => ({
@@ -52,7 +52,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
       pause: () => void playerRef.current?.pauseVideo(),
       seekTo: (seconds: number) => {
         void playerRef.current?.seekTo(seconds, true);
-        onTimeUpdate?.(seconds); // одразу оновлюємо UI, не чекаючи наступного опитування
+        onTimeUpdate?.(seconds); // Update the UI immediately rather than waiting for the next poll.
       },
       getVolume: () => playerRef.current?.getVolume() ?? 100,
       setVolume: (volume: number) => playerRef.current?.setVolume(volume),
@@ -60,8 +60,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
     [onTimeUpdate],
   );
 
-  // YouTube IFrame API не має події "час змінився",
-  // тому поки відео грає — самі раз на 250 мс питаємо getCurrentTime().
+  // The YouTube IFrame API has no time-changed event, so poll getCurrentTime while playing.
   useEffect(() => {
     if (!isPlaying) return;
 
@@ -72,30 +71,29 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
       onTimeUpdate?.(time);
     }, POLL_INTERVAL_MS);
 
-    // Cleanup: зупиняємо таймер при паузі або розмонтуванні компонента
+    // Stop polling when playback pauses or the component unmounts.
     return () => clearInterval(intervalId);
   }, [isPlaying, onTimeUpdate]);
 
-  // Плеєр завантажився — запам'ятовуємо його
+  // Save the player instance after it loads.
   const handleReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
   };
 
-  // Стан змінився (play, pause, буферизація, кінець...)
+  // Handle player state changes such as play, pause, buffering, and end.
   const handleStateChange = async (event: YouTubeEvent<number>) => {
     const playing = event.data === STATE_PLAYING;
     setIsPlaying(playing);
     onPlayingChange?.(playing);
 
-    // Якщо не граємо (пауза, перемотка) — один раз синхронізуємо час,
-    // щоб підсвічений рядок відповідав позиції на таймлайні.
+    // On pause or seek, sync the current time once so the highlighted lyric matches the timeline.
     if (!playing && playerRef.current) {
       onTimeUpdate?.(await playerRef.current.getCurrentTime());
     }
   };
 
   return (
-    // aspect-video тримає пропорції 16:9 на будь-якій ширині
+    // Keep a 16:9 aspect ratio at every width.
     <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
       <YouTube
         videoId={videoId}
@@ -105,8 +103,8 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
           width: "100%",
           height: "100%",
           playerVars: {
-            rel: 0, // не показувати "схожі відео" інших каналів
-            playsinline: 1, // не відкривати на весь екран на iOS
+            rel: 0, // Do not show related videos from other channels.
+            playsinline: 1, // Keep playback inline on iOS.
           },
         }}
         onReady={handleReady}

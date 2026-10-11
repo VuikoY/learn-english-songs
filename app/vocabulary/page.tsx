@@ -1,5 +1,5 @@
 // app/vocabulary/page.tsx
-// Сторінка словника. Дані беремо з localStorage, тому це клієнтський компонент.
+// Vocabulary page backed by localStorage, so this is a client component.
 "use client";
 
 import { useMemo, useState } from "react";
@@ -11,7 +11,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useVocabulary } from "@/lib/storage/vocabulary";
 import type { VocabularyItem } from "@/lib/types";
 
-/** Завантажує словник як vocabulary.json (знадобиться, щоб потім перенести дані в базу). */
+/** Downloads the vocabulary as vocabulary.json for backup or migration. */
 function exportJson(items: VocabularyItem[]) {
   const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -27,7 +27,7 @@ export default function VocabularyPage() {
   const { items } = useVocabulary();
   const [query, setQuery] = useState("");
 
-  // Пошук по фразі, перекладу та назві пісні
+  // Search original phrases, translations, and song titles.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
@@ -46,7 +46,7 @@ export default function VocabularyPage() {
       </p>
 
       {items.length === 0 ? (
-        // Порожній стан: підказуємо, що робити далі
+        // Explain what the user can do when the vocabulary is empty.
         <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed py-16 text-center">
           <BookMarked className="size-8 text-muted-foreground" aria-hidden />
           <p className="font-medium">{t("vocab.empty")}</p>

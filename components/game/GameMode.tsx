@@ -1,5 +1,5 @@
 // components/game/GameMode.tsx
-// Головний модуль гри: вибір режиму й складності -> раунди по рядках пісні -> підсумок.
+// Main game flow: mode and difficulty selection, song-line rounds, and results.
 "use client";
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -51,13 +51,15 @@ import {
 type Props = {
   lines: LyricLine[];
   currentTime: number;
-  /** Перемотати відео на початок рядка й увімкнути його (кнопка "Послухати рядок"). */
+  /** Seeks to a song line and starts playback. */
   onPlayLine?: (startSeconds: number) => void;
   onPause?: () => void;
+  onFadeOut?: () => void;
+  onCancelFadeOut?: () => void;
   songTitle?: string | null;
 };
 
-// Скільки слів мінімум має бути в рядку, щоб він потрапив у гру
+// Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
 
 const MODE_OPTIONS: {
@@ -86,7 +88,7 @@ const DIFFICULTY_TEXT: Record<Difficulty, { title: TranslationKey; description: 
   hard: { title: "game.difficulty.hard", description: "game.difficulty.hard.desc" },
 };
 
-export default function GameMode({ lines, currentTime, onPlayLine, onPause, songTitle = null }: Props) {
+export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFadeOut, onCancelFadeOut, songTitle = null }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const [explanationCache, setExplanationCache] = usePersistentState<Record<string, Explanation>>(
     "lingo-clips:explanations",
@@ -96,7 +98,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
   const [explanationError, setExplanationError] = useState("");
 
-  // ---------- Стан ----------
+  // ---------- State ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
   const [settings, setSettings] = usePersistentState<GameSettings>(
     "lingo-clips:game-settings",
@@ -107,20 +109,21 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
       ["fill-blanks", "first-letter"].includes((value as GameSettings).mode) &&
       ["easy", "medium", "hard"].includes((value as GameSettings).difficulty),
   );
-  const [game, dispatch] = useReducer(gameReducer, initialGameState); // очки, серія, множник
-  const [round, setRound] = useState<Round | null>(null); // поточний рядок
-  const [position, setPosition] = useState(0); // номер раунду серед "ігрових" рядків
-  const [shakeKey, setShakeKey] = useState(0); // збільшуємо при помилці -> запускає тряску
+  const [game, dispatch] = useReducer(gameReducer, initialGameState); // Score, streak, and multiplier.
+  const [round, setRound] = useState<Round | null>(null); // Current line round.
+  const [position, setPosition] = useState(0); // Position among playable lines.
+  const [shakeKey, setShakeKey] = useState(0); // Increment to trigger the error shake animation.
 
   const lineRef = useRef<HTMLDivElement>(null);
   const timedOutRef = useRef(false);
+  const fadingOutLineRef = useRef<LyricLine | null>(null);
   const [keyboardHidden, setKeyboardHidden] = usePersistentState<boolean>(
     "lingo-clips:game-keyboard-hidden",
     false,
     (value): value is boolean => typeof value === "boolean",
   );
 
-  // Рядки, придатні для гри (достатньо слів). Зберігаємо оригінальний індекс.
+  // Keep the original index for each line with enough words to play.
   const playable = useMemo(
     () =>
       lines
@@ -129,10 +132,10 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
     [lines],
   );
 
-  // Слова з усієї пісні — з них беруться хибні слова-манки
+  // Words from the full song are used as distractors.
   const wordPool = useMemo(() => buildWordPool(lines.map((l) => l.text)), [lines]);
 
-  // Похідні значення (рахуємо при рендері, у state не зберігаємо)
+  // Derived values are calculated during render rather than stored in state.
   const nextBlank = round?.tokens.find((tok) => tok.hidden && !round.filledIds.includes(tok.id));
   const isRoundComplete = round !== null && nextBlank === undefined;
   const currentLine = round ? lines[round.lineIndex] : null;
@@ -184,14 +187,35 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
   }
 
   useEffect(() => {
-    if (phase !== "playing" || isRoundComplete || !currentLine) return;
-    if (currentTime >= currentLine.start + currentLine.duration + 1) {
+    if (phase !== "playing" || !currentLine) {
+      if (fadingOutLineRef.current) {
+        onCancelFadeOut?.();
+        fadingOutLineRef.current = null;
+      }
+      return;
+    }
+
+    if (isRoundComplete) {
+      if (fadingOutLineRef.current === currentLine) {
+        onCancelFadeOut?.();
+        fadingOutLineRef.current = null;
+      }
+      return;
+    }
+
+    const lineEnd = currentLine.start + currentLine.duration;
+    if (currentTime >= lineEnd && fadingOutLineRef.current !== currentLine) {
+      fadingOutLineRef.current = currentLine;
+      onFadeOut?.();
+    }
+
+    if (currentTime >= lineEnd + 1) {
       timedOutRef.current = true;
       onPause?.();
     }
-  }, [currentTime, currentLine, isRoundComplete, onPause, phase]);
+  }, [currentTime, currentLine, isRoundComplete, onCancelFadeOut, onFadeOut, onPause, phase]);
 
-  // ---------- Керування раундами ----------
+  // ---------- Round controls ----------
 
   function startRound(nextPosition: number, activeSettings: GameSettings = settings) {
     const entry = playable[nextPosition];
@@ -233,7 +257,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
     setPhase("setup");
   }
 
-  // ---------- Результат кожної відповіді ----------
+  // ---------- Answer handling ----------
 
   function registerCorrect(tokenId: number, bankItemId?: string) {
     dispatch({ type: "correct" });
@@ -256,11 +280,11 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
   }
 
   function registerWrong() {
-    dispatch({ type: "wrong" }); // серія -> 0
-    setShakeKey((key) => key + 1); // запускає анімацію трясіння
+    dispatch({ type: "wrong" }); // Reset the streak.
+    setShakeKey((key) => key + 1); // Trigger the shake animation.
   }
 
-  /** Режим А: клік по слову з банку. Слово має збігатися з наступним пропуском. */
+  /** Fill-in mode: the selected word must match the next blank. */
   function handlePickWord(item: BankItem) {
     if (!nextBlank || item.used) return;
     if (sameWord(item.text, nextBlank.core)) {
@@ -270,7 +294,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
     }
   }
 
-  /** Режим Б: натиснута літера. Має збігатися з першою літерою наступного закритого слова. */
+  /** First-letter mode: the key must match the next hidden word's first letter. */
   function handleLetter(letter: string) {
     if (!nextBlank) return;
     if (normalizeLetter(letter) === normalizeLetter(firstLetterOf(nextBlank))) {
@@ -280,9 +304,9 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
     }
   }
 
-  // ---------- Фізична клавіатура (режим Б) ----------
+  // ---------- Physical keyboard support for first-letter mode ----------
 
-  // Слухач підписується один раз, а актуальну версію handleLetter бере з ref
+  // Subscribe once; the ref always points to the latest handleLetter callback.
   const letterHandlerRef = useRef(handleLetter);
   useEffect(() => {
     letterHandlerRef.current = handleLetter;
@@ -293,10 +317,10 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
     if (!isGamePlaying) return;
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.ctrlKey || event.metaKey || event.altKey) return; // не заважаємо Ctrl+R тощо
+      if (event.ctrlKey || event.metaKey || event.altKey) return; // Leave browser shortcuts available.
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-        return; // користувач друкує в полі — це не відповідь у грі
+        return; // Typing into a field does not count as a game answer.
       }
       if (event.key === "ArrowLeft") {
         if (!currentLine || !onPlayLine) return;
@@ -315,8 +339,8 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [currentLine, isGamePlaying, onPlayLine, settings.mode]);
 
-  // ---------- Анімація трясіння при помилці ----------
-  // Web Animations API: CSS-keyframes у globals.css не потрібні.
+  // ---------- Shake animation for incorrect answers ----------
+  // Use the Web Animations API instead of CSS keyframes.
   useEffect(() => {
     if (shakeKey === 0) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -337,7 +361,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
   }, [shakeKey]);
 
   // =====================================================================
-  // ЕКРАН 1: налаштування
+  // SCREEN 1: setup.
   // =====================================================================
   if (phase === "setup") {
     return (
@@ -353,8 +377,8 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
                   type="button"
                   aria-pressed={selected}
                   onClick={() => setSettings((s) => ({ ...s, mode: id }))}
-                  className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition ${
-                    selected ? "border-primary bg-primary/10 ring-2 ring-primary font-semibold shadow-sm" : "border-slate-300 hover:bg-muted/60 dark:border-slate-700"
+                  className={`flex flex-col items-start gap-1 rounded border p-3 text-left transition ${
+                    selected ? "border-border bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"
                   }`}
                 >
                   <span className="flex items-center gap-2 font-medium">
@@ -379,8 +403,8 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
                   type="button"
                   aria-pressed={selected}
                   onClick={() => setSettings((s) => ({ ...s, difficulty: level }))}
-                  className={`flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition ${
-                    selected ? "border-primary bg-primary/10 ring-2 ring-primary font-semibold shadow-sm" : "border-slate-300 hover:bg-muted/60 dark:border-slate-700"
+                  className={`flex flex-col items-start gap-0.5 rounded border p-3 text-left transition ${
+                    selected ? "border-border bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"
                   }`}
                 >
                   <span className="font-medium">{t(DIFFICULTY_TEXT[level].title)}</span>
@@ -407,7 +431,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
   }
 
   // =====================================================================
-  // ЕКРАН 3: підсумок
+  // SCREEN 3: results.
   // =====================================================================
   if (phase === "finished") {
     const answers = game.correct + game.mistakes;
@@ -439,7 +463,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
   }
 
   // =====================================================================
-  // ЕКРАН 2: гра
+  // SCREEN 2: game.
   // =====================================================================
   if (!round || !currentLine) return null;
 
@@ -470,28 +494,28 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
         </div>
       </div>
 
-      {/* Рядок пісні. ref потрібен для анімації трясіння. */}
+      {/* Song line. The ref is used for the shake animation. */}
       <div ref={lineRef} className="rounded-xl border bg-card p-5">
         <p className="flex flex-wrap items-baseline gap-x-2 gap-y-3 text-xl leading-snug">
           {round.tokens.map((token) => {
-            // 1) Слово не ховали -> показуємо як є
+            // 1) This word is not hidden; show it as-is.
             if (!token.hidden) {
               return <span key={token.id}>{token.raw}</span>;
             }
 
-            // 2) Слово вгадане -> показуємо зеленим (разом із пунктуацією)
+            // 2) This word was guessed; show it with its punctuation.
             if (round.filledIds.includes(token.id)) {
               return (
                 <span
                   key={token.id}
-                  className="font-semibold text-emerald-600 duration-200 animate-in zoom-in-90 dark:text-emerald-400"
+                  className="font-semibold text-emerald-700 duration-200 animate-in zoom-in-90 dark:text-emerald-300"
                 >
                   {token.raw}
                 </span>
               );
             }
 
-            // 3) Слово сховане -> пропуск. Ширина залежить від довжини слова.
+            // 3) This word is hidden; size the blank based on its length.
             return (
               <span key={token.id}>
                 {token.leading}
@@ -510,7 +534,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
         </p>
       </div>
 
-      {/* Нижня плаваюча панель: керування AI, банк слів або клавіатура */}
+      {/* Bottom floating panel for AI actions, the word bank, or the keyboard. */}
       <div className="sticky bottom-3 z-10 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <Button type="button" size="sm" variant="outline" disabled={!currentLine || explanationStatus === "loading"} onClick={toggleExplanation}>

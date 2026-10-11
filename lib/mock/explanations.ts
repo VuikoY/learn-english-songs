@@ -1,6 +1,6 @@
 // lib/mock/explanations.ts
-// Готові "AI-пояснення" для макетних рядків (lib/mock-lyrics.ts). Потрібні, щоб перевіряти
-// інтерфейс без Gemini: у .env.local постав MOCK_AI=true. Для інших рядків — загальна заглушка.
+// Sample AI explanations for demo lyrics. Set MOCK_AI=true in .env.local to use them.
+// Other lines use a generic placeholder.
 
 import type { Explanation } from "@/lib/types";
 import type { Language } from "@/types/game";
@@ -9,9 +9,9 @@ type MockMap = Record<string, Partial<Record<Language, Explanation>>>;
 
 const MOCK: MockMap = {
   "I've been running late, but I'm almost there": {
-    uk: {
-      translation: "Я запізнювався, але вже майже на місці.",
-      grammar: "Present Perfect Continuous (have been + -ing): дія почалася в минулому й триває до цього моменту.",
+    ru: {
+      translation: "Я опаздывал, но уже почти на месте.",
+      grammar: "Present Perfect Continuous (have been + -ing): действие началось в прошлом и продолжается до настоящего момента.",
       slang: "",
     },
     en: {
@@ -21,10 +21,10 @@ const MOCK: MockMap = {
     },
   },
   "Ain't nobody gonna tell me where to go": {
-    uk: {
-      translation: "Ніхто не збирається казати мені, куди йти.",
-      grammar: "Подвійне заперечення (ain't nobody) — нестандартне, але поширене в розмовній мові; where to go = питальне слово + інфінітив.",
-      slang: "ain't — розмовне «isn't/aren't»; gonna = going to.",
+    ru: {
+      translation: "Никто не будет указывать мне, куда идти.",
+      grammar: "Двойное отрицание (ain't nobody) — нестандартная, но распространённая разговорная конструкция; where to go = вопросительное слово + инфинитив.",
+      slang: "ain't — разговорное сокращение от isn't/aren't; gonna = going to.",
     },
     en: {
       translation: "Nobody is going to tell me where to go.",
@@ -33,10 +33,10 @@ const MOCK: MockMap = {
     },
   },
   "If you wanna stay, then you better keep up": {
-    uk: {
-      translation: "Якщо хочеш залишитись, то краще не відставай.",
-      grammar: "Умовне речення 1-го типу; «you better» — скорочення від «you had better» (тобі краще б...).",
-      slang: "wanna = want to; keep up — не відставати.",
+    ru: {
+      translation: "Если хочешь остаться, лучше не отставай.",
+      grammar: "Условное предложение первого типа; you better — сокращение от you had better (тебе лучше бы...).",
+      slang: "wanna = want to; keep up = не отставать.",
     },
     en: {
       translation: "If you want to stay, you'd better not fall behind.",
@@ -45,10 +45,10 @@ const MOCK: MockMap = {
     },
   },
   "'Cause I'm not looking back, I'm already gone": {
-    uk: {
-      translation: "Бо я не озираюся назад, я вже пішов.",
-      grammar: "Present Continuous із запереченням; gone тут — прикметник зі значенням «пішов, зник».",
-      slang: "'cause — розмовне скорочення від because.",
+    ru: {
+      translation: "Потому что я не оглядываюсь назад — я уже ушёл.",
+      grammar: "Отрицательная форма Present Continuous; gone здесь — прилагательное в значении «ушёл, исчез».",
+      slang: "'cause — разговорное сокращение от because.",
     },
     en: {
       translation: "Because I'm not looking back; I'm already gone.",
@@ -57,10 +57,10 @@ const MOCK: MockMap = {
     },
   },
   "She's been chilling on the rooftop since noon": {
-    uk: {
-      translation: "Вона відпочиває на даху з полудня.",
-      grammar: "Present Perfect Continuous + since: дія триває від конкретного моменту в минулому (since noon).",
-      slang: "to chill — розслаблятися, відпочивати.",
+    ru: {
+      translation: "Она отдыхает на крыше с полудня.",
+      grammar: "Present Perfect Continuous + since: действие продолжается с определённого момента в прошлом (since noon).",
+      slang: "to chill = расслабляться, отдыхать.",
     },
     en: {
       translation: "She has been relaxing on the rooftop since noon.",
@@ -69,10 +69,10 @@ const MOCK: MockMap = {
     },
   },
   "We were never meant to play it safe": {
-    uk: {
-      translation: "Нам ніколи не судилося діяти обережно.",
-      grammar: "was/were meant to + інфінітив — «мати бути / бути призначеним»; Past Simple Passive.",
-      slang: "play it safe — не ризикувати (ідіома).",
+    ru: {
+      translation: "Нам никогда не суждено было играть осторожно.",
+      grammar: "Конструкция was/were meant to + инфинитив выражает предназначение; это форма Past Simple Passive.",
+      slang: "play it safe = не рисковать (идиома).",
     },
     en: {
       translation: "We were never supposed to take the cautious route.",
@@ -81,9 +81,9 @@ const MOCK: MockMap = {
     },
   },
   "Gimme one more night and I'll be fine": {
-    uk: {
-      translation: "Дай мені ще одну ніч, і я буду в порядку.",
-      grammar: "Наказовий спосіб + and + Future Simple працює як умовне речення: «дай — і буде».",
+    ru: {
+      translation: "Дай мне ещё одну ночь, и я буду в порядке.",
+      grammar: "Повелительное наклонение + and + Future Simple работает как условное предложение: «дай — и всё будет хорошо».",
       slang: "gimme = give me.",
     },
     en: {
@@ -93,9 +93,9 @@ const MOCK: MockMap = {
     },
   },
   "Had I known better, I'd have stayed": {
-    uk: {
-      translation: "Якби я знав краще, я б залишився.",
-      grammar: "Інверсія в умовному реченні 3-го типу: Had I known = If I had known; I'd have stayed = I would have stayed.",
+    ru: {
+      translation: "Если бы я знал лучше, я бы остался.",
+      grammar: "Инверсия в условном предложении третьего типа: Had I known = If I had known; I'd have stayed = I would have stayed.",
       slang: "",
     },
     en: {
@@ -106,11 +106,11 @@ const MOCK: MockMap = {
   },
 };
 
-// Загальна заглушка для рядків, яких немає в MOCK
+// Generic fallback for lines not listed in MOCK.
 const GENERIC: Record<Language, (text: string) => Explanation> = {
-  uk: (text) => ({
-    translation: `[Демо] Тут буде переклад рядка: «${text}»`,
-    grammar: "Демо-режим (MOCK_AI=true): справжнє пояснення граматики з'явиться, коли вимкнеш мок.",
+  ru: (text) => ({
+    translation: `[Демо] Здесь появится перевод строки: «${text}»`,
+    grammar: "Демо-режим (MOCK_AI=true): настоящее объяснение грамматики появится после отключения заглушки.",
     slang: "",
   }),
   en: (text) => ({
