@@ -2,30 +2,66 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Gamepad2, ScrollText } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import InteractiveLyrics from "@/components/InteractiveLyrics";
+import GameMode from "@/components/game/GameMode";
 import VideoUrlForm from "@/components/VideoUrlForm";
+import { useLanguage } from "@/context/LanguageContext";
 import { DEMO_VIDEO_ID, MOCK_LYRICS } from "@/lib/mock-lyrics";
+import { cacheTranscript, getCachedTranscript } from "@/lib/storage/transcriptCache";
 import type { LyricLine } from "@/lib/types";
 
+type View = "read" | "play";
+
 export default function HomePage() {
-  // Спочатку показуємо демо; після завантаження свого відео все замінюється
+  const { t, sourceLanguage } = useLanguage();
+
+  // Спочатку показуємо демо (MOCK_LYRICS); після завантаження свого відео все замінюється
   const [videoId, setVideoId] = useState(DEMO_VIDEO_ID);
   const [lines, setLines] = useState<LyricLine[]>(MOCK_LYRICS);
   const [currentTime, setCurrentTime] = useState(0);
+  const [songTitle, setSongTitle] = useState<string | null>(null);
+  const [view, setView] = useState<View>("read"); // "Текст" або "Гра"
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const playerRef = useRef<PlayerHandle>(null);
 
-  // Форма вже розпізнала videoId, нам лишається завантажити субтитри
+  function playFrom(seconds: number) {
+    playerRef.current?.seekTo(seconds);
+    playerRef.current?.play();
+  }
+
+  function showVideo(id: string, newLines: LyricLine[]) {
+    setVideoId(id);
+    setLines(newLines);
+    setCurrentTime(0);
+
+    // Назву беремо "у фоні": якщо не вийде — просто лишаємо null
+    setSongTitle(null);
+    fetch(`/api/video-title?videoId=${id}`)
+      .then((res) => res.json())
+      .then((data: { title: string | null }) => setSongTitle(data.title ?? null))
+      .catch(() => {});
+  }
+
   async function handleLoad(id: string) {
     setError(null);
-    setIsLoading(true);
 
+    // 1. Уже завантажували це відео цією мовою пісні? Беремо з кешу браузера.
+    const cached = getCachedTranscript(id, sourceLanguage);
+    if (cached) {
+      showVideo(id, cached);
+      return;
+    }
+
+    // 2. Інакше просимо сервер (lang = мова пісні: від неї залежить, які субтитри віддасть YouTube)
+    setIsLoading(true);
     try {
-      const response = await fetch(`/api/transcript?videoId=${id}`);
+      const response = await fetch(`/api/transcript?videoId=${id}&lang=${sourceLanguage}`);
 
       // Читаємо як текст, щоб не впасти з "Unexpected token <", якщо прийшов HTML
       const raw = await response.text();
@@ -43,9 +79,9 @@ export default function HomePage() {
         throw new Error(message ?? "Помилка завантаження субтитрів");
       }
 
-      setVideoId(id);
-      setLines(json as LyricLine[]);
-      setCurrentTime(0);
+      const newLines = json as LyricLine[];
+      cacheTranscript(id, sourceLanguage, newLines);
+      showVideo(id, newLines);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Невідома помилка");
     } finally {
@@ -55,27 +91,53 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="mb-1 text-2xl font-semibold tracking-tight">Англійська за кліпами</h1>
-      <p className="mb-6 text-muted-foreground">
-        Встав посилання на кліп із англійськими субтитрами, клікай на рядок для перемотки і питай AI
-        про граматику та сленг.
-      </p>
+      <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t("app.title")}</h1>
+      <p className="mb-6 text-muted-foreground">{t("app.subtitle")}</p>
 
       <VideoUrlForm onSubmit={handleLoad} isLoading={isLoading} error={error} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} />
 
-        <InteractiveLyrics
-          lines={lines}
-          currentTime={currentTime}
-          onSeek={(seconds) => {
-            playerRef.current?.seekTo(seconds);
-            playerRef.current?.play();
-          }}
-          // Ставимо відео на паузу, поки студент читає пояснення
-          onExplainStart={() => playerRef.current?.pause()}
-        />
+        <div className="space-y-3">
+          {/* Перемикач "Текст / Гра" */}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={view === "read" ? "secondary" : "outline"}
+              aria-pressed={view === "read"}
+              onClick={() => setView("read")}
+            >
+              <ScrollText className="size-4" />
+              {t("nav.read")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={view === "play" ? "secondary" : "outline"}
+              aria-pressed={view === "play"}
+              onClick={() => setView("play")}
+            >
+              <Gamepad2 className="size-4" />
+              {t("nav.play")}
+            </Button>
+          </div>
+
+          {/* Текст лишаємо в DOM, лише ховаємо: так не губиться стан відкритих пояснень */}
+          <div className={view === "read" ? "" : "hidden"}>
+            <InteractiveLyrics
+              lines={lines}
+              currentTime={currentTime}
+              songTitle={songTitle}
+              onSeek={playFrom}
+              onExplainStart={() => playerRef.current?.pause()}
+            />
+          </div>
+
+          {/* Гру показуємо лише коли вона активна (вона слухає клавіатуру). key скидає її для нового відео */}
+          {view === "play" && <GameMode key={videoId} lines={lines} onPlayLine={playFrom} />}
+        </div>
       </div>
     </main>
   );

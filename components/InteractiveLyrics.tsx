@@ -5,7 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronUp, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
-import type { Explanation, LyricLine } from "@/lib/types";
+import SaveToVocabularyButton from "@/components/SaveToVocabularyButton";
+import { useLanguage } from "@/context/LanguageContext";
+import { capEntries, usePersistentState } from "@/lib/storage/usePersistentState";
+import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
 
 type Props = {
   lines: LyricLine[];
@@ -15,6 +18,8 @@ type Props = {
   onSeek: (seconds: number) => void;
   /** Викликається, коли користувач натиснув AI Explain (щоб поставити відео на паузу). */
   onExplainStart?: () => void;
+  /** Назва відео — зберігається разом із фразою у словнику (необов'язково). */
+  songTitle?: string | null;
 };
 
 // Стан панелі пояснення для ОДНОГО рядка.
@@ -25,22 +30,52 @@ type LineState =
   | { kind: "open" }; // картка розгорнута
 
 // Ключ кешу = текст рядка. toLowerCase/trim — щоб "Hello " і "hello" вважались тим самим.
-const cacheKey = (text: string) => text.trim().toLowerCase();
+// langKey ("en>pl") входить у ключ: те саме речення з іншою мовою пояснення — це інший запис кешу.
+// Скільки пояснень максимум тримаємо в localStorage
+const MAX_CACHED_EXPLANATIONS = 500;
+
+// Перевірка даних із localStorage: усі значення мають бути Explanation
+function isExplanationRecord(value: unknown): value is Record<string, Explanation> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every(isExplanation)
+  );
+}
+
+const cacheKey = (text: string, langKey: string) => `${langKey}::${text.trim().toLowerCase()}`;
 
 // Ключ стану рядка. У ньому є індекс і текст, тож коли завантажується інше відео,
 // старі стани просто "не знаходяться" — скидати їх вручну не треба.
-const lineId = (line: LyricLine, index: number) => `${index}:${line.start}:${line.text}`;
+const lineId = (line: LyricLine, index: number, langKey: string) =>
+  `${langKey}:${index}:${line.start}:${line.text}`;
 
-export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplainStart }: Props) {
+export default function InteractiveLyrics({
+  lines,
+  currentTime,
+  onSeek,
+  onExplainStart,
+  songTitle = null,
+}: Props) {
   // 1. КЕШ: текст рядка -> готове пояснення.
   //    Живе, поки відкрита сторінка, і переживає зміну відео.
-  const [explanationCache, setExplanationCache] = useState<Record<string, Explanation>>({});
+  // Переживає перезавантаження сторінки: те саме пояснення не просимо в AI вдруге
+  const [explanationCache, setExplanationCache] = usePersistentState<Record<string, Explanation>>(
+    "lingo-clips:explanations",
+    {},
+    isExplanationRecord,
+  );
 
   // 2. Стан панелі пояснення для кожного рядка (loading / error / open)
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
 
   // 3. Тоглер автоскролу
   const [autoScroll, setAutoScroll] = useState(true);
+
+  // Мови з контексту: що вибрав користувач — те й іде в запит до AI та в ключі кешу
+  const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const langKey = `${sourceLanguage}>${targetLanguage}`;
 
   // Ref на DOM-елемент АКТИВНОГО рядка (прив'язується лише до одного рядка за раз)
   const activeLineRef = useRef<HTMLDivElement | null>(null);
@@ -71,8 +106,8 @@ export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplai
 
   async function handleExplain(index: number) {
     const line = lines[index];
-    const id = lineId(line, index);
-    const key = cacheKey(line.text);
+    const id = lineId(line, index, langKey);
+    const key = cacheKey(line.text, langKey);
 
     // Картка вже відкрита -> повторний клік її ховає
     if (lineStates[id]?.kind === "open") {
@@ -95,7 +130,7 @@ export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplai
       const response = await fetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: line.text }),
+        body: JSON.stringify({ text: line.text, sourceLanguage, targetLanguage }),
       });
 
       // Читаємо як текст: якщо сервер повернув HTML чи порожню відповідь — покажемо зрозумілу помилку
@@ -111,7 +146,9 @@ export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplai
       }
 
       // Кладемо відповідь у кеш і розгортаємо картку
-      setExplanationCache((prev) => ({ ...prev, [key]: json as unknown as Explanation }));
+      setExplanationCache((prev) =>
+        capEntries({ ...prev, [key]: json as unknown as Explanation }, MAX_CACHED_EXPLANATIONS),
+      );
       setLineState(id, { kind: "open" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Невідома помилка";
@@ -123,7 +160,7 @@ export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplai
     <div className="flex flex-col gap-2">
       {/* Панель керування над списком */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Рядків: {lines.length}</p>
+        <p className="text-sm text-muted-foreground">{t("lyrics.lines", { count: lines.length })}</p>
 
         <Button
           type="button"
@@ -132,17 +169,17 @@ export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplai
           aria-pressed={autoScroll}
           onClick={() => setAutoScroll((value) => !value)}
         >
-          Auto-scroll: {autoScroll ? "ON" : "OFF"}
+          {t("lyrics.autoscroll")}: {autoScroll ? t("common.on") : t("common.off")}
         </Button>
       </div>
 
       {/* Контейнер зі списком, що прокручується */}
       <div className="h-[28rem] space-y-1 overflow-y-auto rounded-xl border bg-card p-3">
         {lines.map((line, index) => {
-          const id = lineId(line, index);
+          const id = lineId(line, index, langKey);
           const isActive = index === activeIndex;
           const state = lineStates[id];
-          const cached = explanationCache[cacheKey(line.text)];
+          const cached = explanationCache[cacheKey(line.text, langKey)];
 
           return (
             <div
@@ -179,7 +216,7 @@ export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplai
                   ) : (
                     <Sparkles className="size-4" />
                   )}
-                  {state?.kind === "open" ? "Сховати" : "AI Explain"}
+                  {state?.kind === "open" ? t("explain.hide") : t("explain.button")}
                 </Button>
               </div>
 
@@ -192,7 +229,19 @@ export default function InteractiveLyrics({ lines, currentTime, onSeek, onExplai
                 </p>
               )}
 
-              {state?.kind === "open" && cached && <ExplanationCard data={cached} />}
+              {state?.kind === "open" && cached && (
+                <ExplanationCard
+                  data={cached}
+                  // Кнопка "Зберегти в словник" усередині картки пояснення
+                  actions={
+                    <SaveToVocabularyButton
+                      original={line.text}
+                      explanation={cached}
+                      songTitle={songTitle}
+                    />
+                  }
+                />
+              )}
             </div>
           );
         })}

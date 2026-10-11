@@ -1,11 +1,14 @@
 // components/ExplanationCard.tsx
-// Картка з відповіддю AI (3 розділи) і скелетон, який показуємо, поки чекаємо відповідь.
+// Три розділи з відповіддю AI, картка для чату та скелетон завантаження.
+// Заголовки розділів беруться з мови інтерфейсу (useLanguage), тому це клієнтський компонент.
+"use client";
 
 import type { ReactNode } from "react";
 import { BookOpen, Languages, Zap, type LucideIcon } from "lucide-react";
+import { useLanguage } from "@/context/LanguageContext";
 import type { Explanation } from "@/lib/types";
 
-// ---------- Один розділ картки: кольорова іконка + заголовок + текст ----------
+// ---------- Один розділ: кольорова іконка + заголовок + текст ----------
 
 type SectionProps = {
   icon: LucideIcon;
@@ -29,18 +32,17 @@ function Section({ icon: Icon, title, accent, children }: SectionProps) {
   );
 }
 
-// ---------- Картка з готовою відповіддю ----------
+// ---------- Лише три розділи (без рамки): у чаті й у словнику ----------
 
-export default function ExplanationCard({ data }: { data: Explanation }) {
+export function ExplanationSections({ data }: { data: Explanation }) {
+  const { t } = useLanguage();
   const hasSlang = data.slang.trim() !== "";
 
   return (
-    // animate-in / fade-in / slide-in-from-top-2 надає tw-animate-css (ставиться разом із shadcn).
-    // motion-reduce — поважаємо налаштування "зменшити анімацію" в системі.
-    <div className="mt-3 space-y-4 rounded-xl border bg-muted/40 p-4 duration-300 animate-in fade-in slide-in-from-top-2 motion-reduce:animate-none">
+    <div className="space-y-4">
       <Section
         icon={Languages}
-        title="Переклад"
+        title={t("explain.translation")}
         accent="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
       >
         {data.translation}
@@ -48,7 +50,7 @@ export default function ExplanationCard({ data }: { data: Explanation }) {
 
       <Section
         icon={BookOpen}
-        title="Граматика"
+        title={t("explain.grammar")}
         accent="bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
       >
         {data.grammar}
@@ -56,11 +58,29 @@ export default function ExplanationCard({ data }: { data: Explanation }) {
 
       <Section
         icon={Zap}
-        title="Сленг"
+        title={t("explain.slang")}
         accent="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
       >
-        {hasSlang ? data.slang : "У цьому рядку сленгу немає."}
+        {hasSlang ? data.slang : t("explain.noSlang")}
       </Section>
+    </div>
+  );
+}
+
+// ---------- Картка під рядком пісні: рамка + анімація + місце для кнопок ----------
+
+type CardProps = {
+  data: Explanation;
+  /** Кнопки внизу картки (наприклад, "Зберегти в словник"). */
+  actions?: ReactNode;
+};
+
+export default function ExplanationCard({ data, actions }: CardProps) {
+  return (
+    // animate-in / fade-in / slide-in-from-top-2 надає tw-animate-css (ставиться разом із shadcn).
+    <div className="mt-3 space-y-4 rounded-xl border bg-muted/40 p-4 duration-300 animate-in fade-in slide-in-from-top-2 motion-reduce:animate-none">
+      <ExplanationSections data={data} />
+      {actions && <div className="flex flex-wrap items-center gap-3 border-t pt-3">{actions}</div>}
     </div>
   );
 }
@@ -81,14 +101,15 @@ function SkeletonRow({ lastWidth }: { lastWidth: string }) {
 }
 
 export function ExplanationSkeleton() {
+  const { t } = useLanguage();
+
   return (
-    // role="status" + sr-only текст — щоб скрінрідер озвучив, що йде завантаження
     <div
       role="status"
       aria-busy="true"
       className="mt-3 space-y-4 rounded-xl border bg-muted/40 p-4 animate-pulse motion-reduce:animate-none"
     >
-      <span className="sr-only">AI готує пояснення…</span>
+      <span className="sr-only">{t("explain.loading")}</span>
       <SkeletonRow lastWidth="w-2/3" />
       <SkeletonRow lastWidth="w-1/2" />
       <SkeletonRow lastWidth="w-3/4" />

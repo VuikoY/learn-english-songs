@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Link2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/context/LanguageContext";
 import { extractVideoId } from "@/lib/youtube";
 
 type Props = {
@@ -16,8 +17,9 @@ type Props = {
 };
 
 export default function VideoUrlForm({ onSubmit, isLoading = false, error = null }: Props) {
+  const { t } = useLanguage();
   const [value, setValue] = useState("");
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [invalid, setInvalid] = useState(false);
 
   // Розпізнаємо ID "наживо" — це просто обчислення під час рендера, окремий state не потрібен
   const detectedId = value.trim() ? extractVideoId(value) : null;
@@ -27,16 +29,15 @@ export default function VideoUrlForm({ onSubmit, isLoading = false, error = null
 
     const id = extractVideoId(value);
     if (!id) {
-      setLocalError("Не вдалося розпізнати відео. Встав посилання на YouTube або 11-символьний ID.");
+      setInvalid(true);
       return;
     }
 
-    setLocalError(null);
+    setInvalid(false);
     onSubmit(id);
   }
 
-  // Локальна помилка важливіша, бо стосується того, що користувач щойно ввів
-  const shownError = localError ?? error;
+  const shownError = invalid ? t("form.invalid") : error;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
@@ -51,10 +52,10 @@ export default function VideoUrlForm({ onSubmit, isLoading = false, error = null
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
-              setLocalError(null); // користувач редагує — прибираємо стару помилку
+              setInvalid(false); // користувач редагує — прибираємо стару помилку
             }}
-            placeholder="https://www.youtube.com/watch?v=... або ID відео"
-            aria-label="Посилання на YouTube-відео"
+            placeholder={t("form.placeholder")}
+            aria-label={t("form.placeholder")}
             aria-invalid={shownError ? true : undefined}
             className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
           />
@@ -62,7 +63,7 @@ export default function VideoUrlForm({ onSubmit, isLoading = false, error = null
 
         <Button type="submit" disabled={isLoading || value.trim() === ""}>
           {isLoading && <Loader2 className="size-4 animate-spin" />}
-          Завантажити
+          {t("form.load")}
         </Button>
       </div>
 
@@ -71,7 +72,7 @@ export default function VideoUrlForm({ onSubmit, isLoading = false, error = null
           {shownError}
         </p>
       ) : detectedId ? (
-        <p className="text-sm text-muted-foreground">Розпізнано відео: {detectedId}</p>
+        <p className="text-sm text-muted-foreground">{t("form.detected", { id: detectedId })}</p>
       ) : null}
     </form>
   );
