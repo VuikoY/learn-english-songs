@@ -1,6 +1,7 @@
 // components/LanguageSwitcher.tsx
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Globe } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGE_CODES, LANGUAGES, isLanguage, type Language } from "@/types/game";
@@ -37,6 +38,7 @@ function LanguageField({ id, label, value, onChange }: FieldProps) {
 }
 
 export default function LanguageSwitcher() {
+  const menuRef = useRef<HTMLDetailsElement>(null);
   const {
     t,
     uiLanguage,
@@ -47,9 +49,28 @@ export default function LanguageSwitcher() {
     setSourceLanguage,
   } = useLanguage();
 
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) {
+        menuRef.current?.removeAttribute("open");
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") menuRef.current?.removeAttribute("open");
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   return (
     // <details> — вбудований у браузер випадаючий блок, JS для відкриття не потрібен
-    <details className="relative">
+    <details ref={menuRef} className="relative">
       <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-sm hover:bg-muted [&::-webkit-details-marker]:hidden">
         <Globe className="size-4" aria-hidden />
         <span>

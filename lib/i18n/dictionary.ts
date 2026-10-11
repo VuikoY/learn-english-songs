@@ -11,8 +11,8 @@ const uk = {
 
   "lang.settings": "Мови",
   "lang.ui": "Мова інтерфейсу",
-  "lang.target": "Мова пояснень",
-  "lang.source": "Мова пісні",
+  "lang.target": "Рідна мова",
+  "lang.source": "Мова, яку вивчаю",
 
   "game.mode.label": "Режим гри",
   "game.mode.fillBlanks": "Вставити пропущені слова",
@@ -93,8 +93,8 @@ const en: Dictionary = {
 
   "lang.settings": "Languages",
   "lang.ui": "Interface language",
-  "lang.target": "Explanation language",
-  "lang.source": "Song language",
+  "lang.target": "Native language",
+  "lang.source": "Language I’m learning",
 
   "game.mode.label": "Game mode",
   "game.mode.fillBlanks": "Fill in the blanks",
@@ -172,8 +172,8 @@ const pl: Dictionary = {
 
   "lang.settings": "Języki",
   "lang.ui": "Język interfejsu",
-  "lang.target": "Język wyjaśnień",
-  "lang.source": "Język piosenki",
+  "lang.target": "Język ojczysty",
+  "lang.source": "Język, którego się uczę",
 
   "game.mode.label": "Tryb gry",
   "game.mode.fillBlanks": "Uzupełnij luki",
@@ -251,8 +251,8 @@ const es: Dictionary = {
 
   "lang.settings": "Idiomas",
   "lang.ui": "Idioma de la interfaz",
-  "lang.target": "Idioma de las explicaciones",
-  "lang.source": "Idioma de la canción",
+  "lang.target": "Lengua materna",
+  "lang.source": "Idioma que estoy aprendiendo",
 
   "game.mode.label": "Modo de juego",
   "game.mode.fillBlanks": "Completa los huecos",

@@ -13,12 +13,17 @@ import {
   LogOut,
   Puzzle,
   RotateCcw,
+  Loader2,
+  Sparkles,
+  ChevronUp,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ScoreBoard from "@/components/game/ScoreBoard";
 import WordBank from "@/components/game/WordBank";
 import LetterKeyboard from "@/components/game/LetterKeyboard";
+import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
+import SaveToVocabularyButton from "@/components/SaveToVocabularyButton";
 import { useLanguage } from "@/context/LanguageContext";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 import {
@@ -31,8 +36,8 @@ import {
   sameWord,
 } from "@/lib/game/buildRound";
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
-import type { LyricLine } from "@/lib/types";
-import { usePersistentState } from "@/lib/storage/usePersistentState";
+import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
+import { capEntries, usePersistentState } from "@/lib/storage/usePersistentState";
 import {
   DIFFICULTIES,
   type BankItem,
@@ -49,6 +54,7 @@ type Props = {
   /** Перемотати відео на початок рядка й увімкнути його (кнопка "Послухати рядок"). */
   onPlayLine?: (startSeconds: number) => void;
   onPause?: () => void;
+  songTitle?: string | null;
 };
 
 // Скільки слів мінімум має бути в рядку, щоб він потрапив у гру
@@ -80,18 +86,34 @@ const DIFFICULTY_TEXT: Record<Difficulty, { title: TranslationKey; description: 
   hard: { title: "game.difficulty.hard", description: "game.difficulty.hard.desc" },
 };
 
-export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Props) {
-  const { t, sourceLanguage } = useLanguage();
+export default function GameMode({ lines, currentTime, onPlayLine, onPause, songTitle = null }: Props) {
+  const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const [explanationCache, setExplanationCache] = usePersistentState<Record<string, Explanation>>(
+    "lingo-clips:explanations",
+    {},
+    (value): value is Record<string, Explanation> => typeof value === "object" && value !== null && !Array.isArray(value) && Object.values(value).every(isExplanation),
+  );
+  const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
+  const [explanationError, setExplanationError] = useState("");
 
   // ---------- Стан ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
-  const [settings, setSettings] = useState<GameSettings>({ mode: "fill-blanks", difficulty: "easy" });
+  const [settings, setSettings] = usePersistentState<GameSettings>(
+    "lingo-clips:game-settings",
+    { mode: "fill-blanks", difficulty: "easy" },
+    (value): value is GameSettings =>
+      typeof value === "object" && value !== null &&
+      (value as GameSettings).mode !== undefined &&
+      ["fill-blanks", "first-letter"].includes((value as GameSettings).mode) &&
+      ["easy", "medium", "hard"].includes((value as GameSettings).difficulty),
+  );
   const [game, dispatch] = useReducer(gameReducer, initialGameState); // очки, серія, множник
   const [round, setRound] = useState<Round | null>(null); // поточний рядок
   const [position, setPosition] = useState(0); // номер раунду серед "ігрових" рядків
   const [shakeKey, setShakeKey] = useState(0); // збільшуємо при помилці -> запускає тряску
 
   const lineRef = useRef<HTMLDivElement>(null);
+  const timedOutRef = useRef(false);
   const [keyboardHidden, setKeyboardHidden] = usePersistentState<boolean>(
     "lingo-clips:game-keyboard-hidden",
     false,
@@ -114,10 +136,54 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
   const nextBlank = round?.tokens.find((tok) => tok.hidden && !round.filledIds.includes(tok.id));
   const isRoundComplete = round !== null && nextBlank === undefined;
   const currentLine = round ? lines[round.lineIndex] : null;
+  const explainKey = currentLine ? `${sourceLanguage}>${targetLanguage}::${currentLine.text.trim().toLowerCase()}` : "";
+  const cachedExplanation = explainKey ? explanationCache[explainKey] : undefined;
+  const explanationLineRef = useRef(explainKey);
+  useEffect(() => {
+    if (explanationLineRef.current === explainKey) return;
+    explanationLineRef.current = explainKey;
+    setExplanationStatus("closed");
+    setExplanationError("");
+  }, [explainKey]);
+
+  async function toggleExplanation() {
+    if (!currentLine || !explainKey) return;
+    if (explanationStatus === "open") {
+      setExplanationStatus("closed");
+      return;
+    }
+    onPause?.();
+    if (cachedExplanation) {
+      setExplanationStatus("open");
+      return;
+    }
+    setExplanationStatus("loading");
+    setExplanationError("");
+    try {
+      const response = await fetch("/api/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: currentLine.text, sourceLanguage, targetLanguage }),
+      });
+      const raw = await response.text();
+      let result: Record<string, unknown>;
+      try { result = JSON.parse(raw); } catch { throw new Error(`Server returned invalid JSON (${response.status}).`); }
+      if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not get an explanation.");
+      if (!isExplanation(result)) throw new Error("The explanation response has an invalid format.");
+      setExplanationCache((previous) => capEntries({ ...previous, [explainKey]: result }, 500));
+      setExplanationStatus("open");
+    } catch (error) {
+      setExplanationError(error instanceof Error ? error.message : "Unknown error");
+      setExplanationStatus("error");
+    }
+  }
 
   useEffect(() => {
     if (phase !== "playing" || isRoundComplete || !currentLine) return;
-    if (currentTime >= currentLine.start + currentLine.duration + 1) onPause?.();
+    if (currentTime >= currentLine.start + currentLine.duration + 1) {
+      timedOutRef.current = true;
+      onPause?.();
+    }
   }, [currentTime, currentLine, isRoundComplete, onPause, phase]);
 
   // ---------- Керування раундами ----------
@@ -131,6 +197,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
 
   function startGame() {
     if (playable.length === 0) return;
+    timedOutRef.current = false;
     dispatch({ type: "reset" });
     startRound(0);
     setPhase("playing");
@@ -138,6 +205,8 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
   }
 
   function goNext() {
+    const shouldReplayNext = timedOutRef.current;
+    timedOutRef.current = false;
     if (position + 1 >= playable.length) {
       setPhase("finished");
       return;
@@ -146,8 +215,14 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
     const nextPosition = position + 1;
     startRound(nextPosition);
     const nextLine = playable[nextPosition]?.line;
-    if (nextLine) onPlayLine?.(nextLine.start);
+    if (shouldReplayNext && nextLine) onPlayLine?.(nextLine.start);
   }
+  function replayCurrentLine() {
+    if (!currentLine || !onPlayLine) return;
+    timedOutRef.current = false;
+    onPlayLine(currentLine.start);
+  }
+
   function quitToSetup() {
     setRound(null);
     setPhase("setup");
@@ -221,7 +296,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
       if (event.key === "ArrowLeft") {
         if (!currentLine || !onPlayLine) return;
         event.preventDefault();
-        onPlayLine(currentLine.start);
+        replayCurrentLine();
         return;
       }
       if (settings.mode !== "first-letter") return;
@@ -378,7 +453,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
         </p>
         <div className="flex gap-2">
           {onPlayLine && (
-            <Button type="button" variant="outline" size="sm" onClick={() => onPlayLine(currentLine.start)}>
+            <Button type="button" variant="outline" size="sm" onClick={replayCurrentLine}>
               <ArrowLeft className="size-4" />
               {t("game.replay")}
             </Button>
@@ -430,12 +505,14 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
         </p>
       </div>
 
-      {/* Нижня плаваюча панель: банк слів або клавіатура (sticky = липне до низу екрана) */}
-      <div className="sticky bottom-3 z-10">
-        {settings.mode === "fill-blanks" ? (
-          <WordBank items={round.bank} onPick={handlePickWord} disabled={isRoundComplete} />
-        ) : (
-          <div className="flex flex-col items-end gap-2">
+      {/* Нижня плаваюча панель: керування AI, банк слів або клавіатура */}
+      <div className="sticky bottom-3 z-10 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={!currentLine || explanationStatus === "loading"} onClick={toggleExplanation}>
+            {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" /> : explanationStatus === "open" ? <ChevronUp className="size-4" /> : <Sparkles className="size-4" />}
+            {explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
+          </Button>
+          {settings.mode === "first-letter" && (
             <Button
               type="button"
               size="sm"
@@ -446,14 +523,26 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Pr
               {keyboardHidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
               {keyboardHidden ? t("game.keyboard.show") : t("game.keyboard.hide")}
             </Button>
-            {!keyboardHidden && (
-              <LetterKeyboard
-                letters={ALPHABETS[sourceLanguage]}
-                onPress={handleLetter}
-                disabled={isRoundComplete}
-              />
-            )}
-          </div>
+          )}
+        </div>
+        {explanationStatus === "loading" && <ExplanationSkeleton />}
+        {explanationStatus === "error" && <p role="alert" className="text-sm text-destructive">{explanationError}</p>}
+        {explanationStatus === "open" && cachedExplanation && currentLine && (
+          <ExplanationCard
+            data={cachedExplanation}
+            actions={<SaveToVocabularyButton original={currentLine.text} explanation={cachedExplanation} songTitle={songTitle} />}
+          />
+        )}
+        {settings.mode === "fill-blanks" ? (
+          <WordBank items={round.bank} onPick={handlePickWord} disabled={isRoundComplete} />
+        ) : (
+          !keyboardHidden && (
+            <LetterKeyboard
+              letters={ALPHABETS[sourceLanguage]}
+              onPress={handleLetter}
+              disabled={isRoundComplete}
+            />
+          )
         )}
       </div>
     </section>

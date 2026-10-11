@@ -12,6 +12,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { DEMO_VIDEO_ID } from "@/lib/mock-lyrics";
 import { cacheTranscript, getCachedTranscript } from "@/lib/storage/transcriptCache";
 import type { LyricLine } from "@/lib/types";
+import { usePersistentState } from "@/lib/storage/usePersistentState";
 
 type View = "read" | "play";
 
@@ -23,7 +24,11 @@ export default function HomePage() {
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
   const [songTitle, setSongTitle] = useState<string | null>(null);
-  const [view, setView] = useState<View>("read"); // "Текст" або "Гра"
+  const [view, setView] = usePersistentState<View>(
+    "lingo-clips:active-view",
+    "read",
+    (value): value is View => value === "read" || value === "play",
+  ); // Запам’ятовує, чи користувач обрав текст або гру.
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,7 +188,7 @@ export default function HomePage() {
           </div>
 
           {/* Гру показуємо лише коли вона активна (вона слухає клавіатуру). key скидає її для нового відео */}
-          {view === "play" && <GameMode key={videoId} lines={lines} currentTime={currentTime} onPlayLine={playGameLine} onPause={pausePlayer} />}
+          {view === "play" && <GameMode key={videoId} lines={lines} currentTime={currentTime} songTitle={songTitle} onPlayLine={playGameLine} onPause={pausePlayer} />}
         </div>
       </div>
     </main>
