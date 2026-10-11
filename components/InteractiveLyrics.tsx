@@ -130,7 +130,12 @@ export default function InteractiveLyrics({
       const response = await fetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: line.text, sourceLanguage, targetLanguage }),
+        body: JSON.stringify({
+          text: line.text,
+          context: lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" "),
+          sourceLanguage,
+          targetLanguage,
+        }),
       });
 
       // Читаємо як текст: якщо сервер повернув HTML чи порожню відповідь — покажемо зрозумілу помилку

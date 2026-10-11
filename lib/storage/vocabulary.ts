@@ -7,9 +7,10 @@
 // isSameWord(). Коли підключимо базу, змінимо лише внутрішню реалізацію цього файлу.
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { isLanguage } from "@/types/game";
 import type { NewVocabularyItem, VocabularyItem } from "@/lib/types";
+import { getSupabaseUserClient } from "@/lib/supabase/client";
 
 const STORAGE_KEY = "lingo-clips:vocabulary";
 const CHANGE_EVENT = "lingo-clips:vocabulary-changed";
@@ -74,7 +75,32 @@ function writeItems(items: VocabularyItem[]): boolean {
     return false; // сховище заповнене або недоступне
   }
   window.dispatchEvent(new Event(CHANGE_EVENT));
+  void syncVocabularyToSupabase(items);
   return true;
+}
+
+async function syncVocabularyToSupabase(items: VocabularyItem[]) {
+  try {
+    const client = await getSupabaseUserClient();
+    if (!client) return;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return;
+
+    const { data: savedRows } = await client.from("vocabulary").select("id").eq("user_id", user.id);
+    const itemIds = new Set(items.map((item) => item.id));
+    const removedIds = (savedRows ?? []).map((row) => row.id).filter((id) => !itemIds.has(id));
+    if (removedIds.length) {
+      await client.from("vocabulary").delete().eq("user_id", user.id).in("id", removedIds);
+    }
+    if (items.length) {
+      await client.from("vocabulary").upsert(
+        items.map((item) => ({ user_id: user.id, ...item })),
+        { onConflict: "user_id,id" },
+      );
+    }
+  } catch {
+    // localStorage remains the source of truth while offline or when Supabase is not configured.
+  }
 }
 
 function createId(): string {
@@ -110,5 +136,37 @@ export function removeWord(id: string): void {
 export function useVocabulary() {
   // Третій аргумент — значення на сервері (там localStorage немає)
   const items = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const client = await getSupabaseUserClient();
+        if (!client) return;
+        const { data: { user } } = await client.auth.getUser();
+        if (!user) return;
+        const { data, error } = await client.from("vocabulary").select("*").eq("user_id", user.id);
+        if (error || !active || !data) return;
+
+        const remoteItems = data.filter(isVocabularyItem);
+        const localItems = getSnapshot();
+        const ids = new Set(localItems.map((item) => item.id));
+        const phrases = new Set(localItems.map((item) => `${normalize(item.original_text)}::${item.target_language}`));
+        const merged = [
+          ...localItems,
+          ...remoteItems.filter((item) => {
+            const phrase = `${normalize(item.original_text)}::${item.target_language}`;
+            if (ids.has(item.id) || phrases.has(phrase)) return false;
+            ids.add(item.id);
+            phrases.add(phrase);
+            return true;
+          }),
+        ];
+        writeItems(merged);
+      } catch {
+        // Keep the local vocabulary when remote sync is unavailable.
+      }
+    })();
+    return () => { active = false; };
+  }, []);
   return { items, addWord, removeWord };
 }

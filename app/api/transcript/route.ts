@@ -8,6 +8,7 @@ import { cleanTranscript } from "@/lib/utils/cleanTranscript";
 import { isValidVideoId } from "@/lib/youtube";
 import type { LyricLine } from "@/lib/types";
 import { isLanguage } from "@/types/game";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -22,6 +23,20 @@ export async function GET(request: Request) {
   }
 
   try {
+    let supabase: Awaited<ReturnType<typeof createSupabaseServerClient>> = null;
+    try { supabase = await createSupabaseServerClient(); } catch { /* Fall through to YouTube. */ }
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from("transcripts")
+          .select("lines_json")
+          .eq("video_id", videoId)
+          .eq("language", lang)
+          .maybeSingle();
+        if (data && Array.isArray(data.lines_json)) return NextResponse.json(data.lines_json);
+      } catch { /* Cache miss or database unavailable: retrieve from YouTube. */ }
+    }
+
     const items = await YoutubeTranscript.fetchTranscript(videoId, { lang });
 
     if (items.length === 0) {
@@ -47,6 +62,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Після очищення субтитрів не лишилось тексту" }, { status: 404 });
     }
 
+    if (supabase) {
+      try {
+        await supabase.from("transcripts").upsert(
+          { video_id: videoId, language: lang, lines_json: lines },
+          { onConflict: "video_id,language" },
+        );
+      } catch { /* Do not fail transcript delivery when cache writes fail. */ }
+    }
     return NextResponse.json(lines);
   } catch (error) {
     console.error("Transcript error:", error);

@@ -163,7 +163,12 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, song
       const response = await fetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: currentLine.text, sourceLanguage, targetLanguage }),
+        body: JSON.stringify({
+          text: currentLine.text,
+          context: lines.slice(Math.max(0, round!.lineIndex - 1), round!.lineIndex + 2).filter((_, index) => index !== round!.lineIndex - Math.max(0, round!.lineIndex - 1)).map((line) => line.text).join(" "),
+          sourceLanguage,
+          targetLanguage,
+        }),
       });
       const raw = await response.text();
       let result: Record<string, unknown>;
