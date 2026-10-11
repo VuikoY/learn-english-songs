@@ -1,7 +1,7 @@
 // app/page.tsx
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Gamepad2, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
@@ -9,7 +9,7 @@ import InteractiveLyrics from "@/components/InteractiveLyrics";
 import GameMode from "@/components/game/GameMode";
 import VideoUrlForm from "@/components/VideoUrlForm";
 import { useLanguage } from "@/context/LanguageContext";
-import { DEMO_VIDEO_ID, MOCK_LYRICS } from "@/lib/mock-lyrics";
+import { DEMO_VIDEO_ID } from "@/lib/mock-lyrics";
 import { cacheTranscript, getCachedTranscript } from "@/lib/storage/transcriptCache";
 import type { LyricLine } from "@/lib/types";
 
@@ -20,7 +20,7 @@ export default function HomePage() {
 
   // Спочатку показуємо демо (MOCK_LYRICS); після завантаження свого відео все замінюється
   const [videoId, setVideoId] = useState(DEMO_VIDEO_ID);
-  const [lines, setLines] = useState<LyricLine[]>(MOCK_LYRICS);
+  const [lines, setLines] = useState<LyricLine[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
   const [songTitle, setSongTitle] = useState<string | null>(null);
   const [view, setView] = useState<View>("read"); // "Текст" або "Гра"
@@ -29,11 +29,52 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
 
   const playerRef = useRef<PlayerHandle>(null);
+  const pausePlayer = useCallback(() => playerRef.current?.pause(), []);
+  const volumeRampRef = useRef<{ target: number; normalVolume: number; startedAt?: number; startVolume?: number } | null>(null);
+  useEffect(() => {
+    const ramp = volumeRampRef.current;
+    const player = playerRef.current;
+    if (!ramp || !player || currentTime < ramp.target) return;
+
+    if (ramp.startedAt === undefined) {
+      ramp.startedAt = performance.now();
+      ramp.startVolume = player.getVolume();
+    }
+
+    const intervalId = window.setInterval(() => {
+      const activeRamp = volumeRampRef.current;
+      if (!activeRamp || activeRamp.startedAt === undefined) {
+        window.clearInterval(intervalId);
+        return;
+      }
+
+      const progress = Math.min((performance.now() - activeRamp.startedAt) / 1000, 1);
+      const startVolume = activeRamp.startVolume ?? activeRamp.normalVolume * 0.5;
+      player.setVolume(startVolume + (activeRamp.normalVolume - startVolume) * progress);
+
+      if (progress >= 1) {
+        window.clearInterval(intervalId);
+        volumeRampRef.current = null;
+      }
+    }, 50);
+
+    return () => window.clearInterval(intervalId);
+  }, [currentTime]);
 
   function playFrom(seconds: number) {
     playerRef.current?.seekTo(seconds);
     playerRef.current?.play();
   }
+
+  const playGameLine = useCallback((seconds: number) => {
+    const player = playerRef.current;
+    if (!player) return;
+    const normalVolume = volumeRampRef.current?.normalVolume ?? player.getVolume();
+    volumeRampRef.current = { target: seconds, normalVolume };
+    player.setVolume(normalVolume * 0.5);
+    player.seekTo(Math.max(0, seconds - 1));
+    player.play();
+  }, []);
 
   function showVideo(id: string, newLines: LyricLine[]) {
     setVideoId(id);
@@ -89,6 +130,12 @@ export default function HomePage() {
     }
   }
 
+  useEffect(() => {
+    void handleLoad(DEMO_VIDEO_ID);
+    // Reload the default video when the selected song language changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceLanguage]);
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t("app.title")}</h1>
@@ -131,12 +178,12 @@ export default function HomePage() {
               currentTime={currentTime}
               songTitle={songTitle}
               onSeek={playFrom}
-              onExplainStart={() => playerRef.current?.pause()}
+              onExplainStart={pausePlayer}
             />
           </div>
 
           {/* Гру показуємо лише коли вона активна (вона слухає клавіатуру). key скидає її для нового відео */}
-          {view === "play" && <GameMode key={videoId} lines={lines} onPlayLine={playFrom} />}
+          {view === "play" && <GameMode key={videoId} lines={lines} currentTime={currentTime} onPlayLine={playGameLine} onPause={pausePlayer} />}
         </div>
       </div>
     </main>

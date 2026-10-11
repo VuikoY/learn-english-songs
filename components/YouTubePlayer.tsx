@@ -18,6 +18,8 @@ export type PlayerHandle = {
   play: () => void;
   pause: () => void;
   seekTo: (seconds: number) => void;
+  getVolume: () => number;
+  setVolume: (volume: number) => void;
 };
 
 type Props = {
@@ -52,6 +54,8 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
         void playerRef.current?.seekTo(seconds, true);
         onTimeUpdate?.(seconds); // одразу оновлюємо UI, не чекаючи наступного опитування
       },
+      getVolume: () => playerRef.current?.getVolume() ?? 100,
+      setVolume: (volume: number) => playerRef.current?.setVolume(volume),
     }),
     [onTimeUpdate],
   );

@@ -4,14 +4,15 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
-  ArrowRight,
+  ArrowLeft,
   Check,
   Flag,
+  Eye,
+  EyeOff,
   Keyboard,
   LogOut,
   Puzzle,
   RotateCcw,
-  Volume2,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
 } from "@/lib/game/buildRound";
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
 import type { LyricLine } from "@/lib/types";
+import { usePersistentState } from "@/lib/storage/usePersistentState";
 import {
   DIFFICULTIES,
   type BankItem,
@@ -43,8 +45,10 @@ import {
 
 type Props = {
   lines: LyricLine[];
+  currentTime: number;
   /** Перемотати відео на початок рядка й увімкнути його (кнопка "Послухати рядок"). */
   onPlayLine?: (startSeconds: number) => void;
+  onPause?: () => void;
 };
 
 // Скільки слів мінімум має бути в рядку, щоб він потрапив у гру
@@ -76,7 +80,7 @@ const DIFFICULTY_TEXT: Record<Difficulty, { title: TranslationKey; description: 
   hard: { title: "game.difficulty.hard", description: "game.difficulty.hard.desc" },
 };
 
-export default function GameMode({ lines, onPlayLine }: Props) {
+export default function GameMode({ lines, currentTime, onPlayLine, onPause }: Props) {
   const { t, sourceLanguage } = useLanguage();
 
   // ---------- Стан ----------
@@ -88,6 +92,11 @@ export default function GameMode({ lines, onPlayLine }: Props) {
   const [shakeKey, setShakeKey] = useState(0); // збільшуємо при помилці -> запускає тряску
 
   const lineRef = useRef<HTMLDivElement>(null);
+  const [keyboardHidden, setKeyboardHidden] = usePersistentState<boolean>(
+    "lingo-clips:game-keyboard-hidden",
+    false,
+    (value): value is boolean => typeof value === "boolean",
+  );
 
   // Рядки, придатні для гри (достатньо слів). Зберігаємо оригінальний індекс.
   const playable = useMemo(
@@ -106,6 +115,11 @@ export default function GameMode({ lines, onPlayLine }: Props) {
   const isRoundComplete = round !== null && nextBlank === undefined;
   const currentLine = round ? lines[round.lineIndex] : null;
 
+  useEffect(() => {
+    if (phase !== "playing" || isRoundComplete || !currentLine) return;
+    if (currentTime >= currentLine.start + currentLine.duration + 1) onPause?.();
+  }, [currentTime, currentLine, isRoundComplete, onPause, phase]);
+
   // ---------- Керування раундами ----------
 
   function startRound(nextPosition: number, activeSettings: GameSettings = settings) {
@@ -120,16 +134,20 @@ export default function GameMode({ lines, onPlayLine }: Props) {
     dispatch({ type: "reset" });
     startRound(0);
     setPhase("playing");
+    onPause?.();
   }
 
   function goNext() {
     if (position + 1 >= playable.length) {
       setPhase("finished");
-    } else {
-      startRound(position + 1);
+      return;
     }
-  }
 
+    const nextPosition = position + 1;
+    startRound(nextPosition);
+    const nextLine = playable[nextPosition]?.line;
+    if (nextLine) onPlayLine?.(nextLine.start);
+  }
   function quitToSetup() {
     setRound(null);
     setPhase("setup");
@@ -139,6 +157,7 @@ export default function GameMode({ lines, onPlayLine }: Props) {
 
   function registerCorrect(tokenId: number, bankItemId?: string) {
     dispatch({ type: "correct" });
+    const completesRound = round !== null && round.filledIds.length + 1 === round.tokens.filter((token) => token.hidden).length;
     setRound((prev) =>
       prev
         ? {
@@ -150,6 +169,10 @@ export default function GameMode({ lines, onPlayLine }: Props) {
           }
         : prev,
     );
+    if (completesRound) {
+      window.setTimeout(goNext, 500);
+    }
+
   }
 
   function registerWrong() {
@@ -185,9 +208,9 @@ export default function GameMode({ lines, onPlayLine }: Props) {
     letterHandlerRef.current = handleLetter;
   });
 
-  const isFirstLetterPlaying = phase === "playing" && settings.mode === "first-letter";
+  const isGamePlaying = phase === "playing";
   useEffect(() => {
-    if (!isFirstLetterPlaying) return;
+    if (!isGamePlaying) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey) return; // не заважаємо Ctrl+R тощо
@@ -195,7 +218,14 @@ export default function GameMode({ lines, onPlayLine }: Props) {
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
         return; // користувач друкує в полі — це не відповідь у грі
       }
-      if (event.key.length !== 1 || !/\p{L}/u.test(event.key)) return; // лише літери
+      if (event.key === "ArrowLeft") {
+        if (!currentLine || !onPlayLine) return;
+        event.preventDefault();
+        onPlayLine(currentLine.start);
+        return;
+      }
+      if (settings.mode !== "first-letter") return;
+      if (event.key.length !== 1 || !/\p{L}/u.test(event.key)) return;
 
       event.preventDefault();
       letterHandlerRef.current(event.key);
@@ -203,7 +233,7 @@ export default function GameMode({ lines, onPlayLine }: Props) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isFirstLetterPlaying]);
+  }, [currentLine, isGamePlaying, onPlayLine, settings.mode]);
 
   // ---------- Анімація трясіння при помилці ----------
   // Web Animations API: CSS-keyframes у globals.css не потрібні.
@@ -244,7 +274,7 @@ export default function GameMode({ lines, onPlayLine }: Props) {
                   aria-pressed={selected}
                   onClick={() => setSettings((s) => ({ ...s, mode: id }))}
                   className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition ${
-                    selected ? "border-primary bg-primary/10" : "hover:bg-muted/60"
+                    selected ? "border-primary bg-primary/10 ring-2 ring-primary font-semibold shadow-sm" : "border-slate-300 hover:bg-muted/60 dark:border-slate-700"
                   }`}
                 >
                   <span className="flex items-center gap-2 font-medium">
@@ -270,7 +300,7 @@ export default function GameMode({ lines, onPlayLine }: Props) {
                   aria-pressed={selected}
                   onClick={() => setSettings((s) => ({ ...s, difficulty: level }))}
                   className={`flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition ${
-                    selected ? "border-primary bg-primary/10" : "hover:bg-muted/60"
+                    selected ? "border-primary bg-primary/10 ring-2 ring-primary font-semibold shadow-sm" : "border-slate-300 hover:bg-muted/60 dark:border-slate-700"
                   }`}
                 >
                   <span className="font-medium">{t(DIFFICULTY_TEXT[level].title)}</span>
@@ -349,7 +379,7 @@ export default function GameMode({ lines, onPlayLine }: Props) {
         <div className="flex gap-2">
           {onPlayLine && (
             <Button type="button" variant="outline" size="sm" onClick={() => onPlayLine(currentLine.start)}>
-              <Volume2 className="size-4" />
+              <ArrowLeft className="size-4" />
               {t("game.replay")}
             </Button>
           )}
@@ -382,7 +412,6 @@ export default function GameMode({ lines, onPlayLine }: Props) {
             }
 
             // 3) Слово сховане -> пропуск. Ширина залежить від довжини слова.
-            const isNext = nextBlank?.id === token.id;
             return (
               <span key={token.id}>
                 {token.leading}
@@ -390,39 +419,15 @@ export default function GameMode({ lines, onPlayLine }: Props) {
                   role="img"
                   aria-label={t("game.hiddenWord")}
                   style={{ width: `${Math.min(Math.max(token.core.length, 2), 14)}ch` }}
-                  className={`inline-block border-b-2 text-transparent transition-colors ${
-                    isNext ? "border-primary bg-primary/10" : "border-muted-foreground/40"
-                  }`}
+                  className="inline-flex min-w-8 items-center justify-center px-1 text-center leading-none text-foreground"
                 >
-                  ___
+                  {settings.mode === "first-letter" ? "\u2022".repeat(token.core.length) : "___"}
                 </span>
                 {token.trailing}
               </span>
             );
           })}
         </p>
-
-        {isRoundComplete && (
-          <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4 duration-300 animate-in fade-in slide-in-from-bottom-2">
-            <span className="flex items-center gap-2 font-medium text-emerald-600 dark:text-emerald-400">
-              <Check className="size-4" aria-hidden />
-              {t("game.lineComplete")}
-            </span>
-            <Button type="button" onClick={goNext}>
-              {position + 1 >= playable.length ? (
-                <>
-                  <Flag className="size-4" />
-                  {t("game.finish")}
-                </>
-              ) : (
-                <>
-                  {t("game.next")}
-                  <ArrowRight className="size-4" />
-                </>
-              )}
-            </Button>
-          </div>
-        )}
       </div>
 
       {/* Нижня плаваюча панель: банк слів або клавіатура (sticky = липне до низу екрана) */}
@@ -430,11 +435,25 @@ export default function GameMode({ lines, onPlayLine }: Props) {
         {settings.mode === "fill-blanks" ? (
           <WordBank items={round.bank} onPick={handlePickWord} disabled={isRoundComplete} />
         ) : (
-          <LetterKeyboard
-            letters={ALPHABETS[sourceLanguage]}
-            onPress={handleLetter}
-            disabled={isRoundComplete}
-          />
+          <div className="flex flex-col items-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-expanded={!keyboardHidden}
+              onClick={() => setKeyboardHidden((hidden) => !hidden)}
+            >
+              {keyboardHidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+              {keyboardHidden ? t("game.keyboard.show") : t("game.keyboard.hide")}
+            </Button>
+            {!keyboardHidden && (
+              <LetterKeyboard
+                letters={ALPHABETS[sourceLanguage]}
+                onPress={handleLetter}
+                disabled={isRoundComplete}
+              />
+            )}
+          </div>
         )}
       </div>
     </section>

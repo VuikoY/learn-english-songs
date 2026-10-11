@@ -5,7 +5,7 @@
 import type { LyricLine } from "./types";
 
 // Офіційне демо-відео YouTube IFrame API. Підстав будь-який свій videoId.
-export const DEMO_VIDEO_ID = "M7lc1UVf-VE";
+export const DEMO_VIDEO_ID = "CaCSuzR4DwM";
 
 export const MOCK_LYRICS: LyricLine[] = [
   { text: "I've been running late, but I'm almost there", start: 0, duration: 4 },
