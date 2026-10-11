@@ -60,6 +60,7 @@ const ru = {
   "form.detected": "Распознано видео: {id}",
 
   "lyrics.lines": "Строк: {count}",
+  "lyrics.progress": "Строк: {total} · Текущая строка: {current}",
   "lyrics.autoscroll": "Автопрокрутка",
   "explain.button": "AI Explain",
   "explain.hide": "Скрыть",
@@ -142,6 +143,7 @@ const en: Dictionary = {
   "form.detected": "Video recognised: {id}",
 
   "lyrics.lines": "Lines: {count}",
+  "lyrics.progress": "Lines: {total} · Current line: {current}",
   "lyrics.autoscroll": "Auto-scroll",
   "explain.button": "AI Explain",
   "explain.hide": "Hide",
@@ -221,6 +223,7 @@ const pl: Dictionary = {
   "form.detected": "Rozpoznano film: {id}",
 
   "lyrics.lines": "Wersów: {count}",
+  "lyrics.progress": "Wersy: {total} · Bieżący wers: {current}",
   "lyrics.autoscroll": "Autoprzewijanie",
   "explain.button": "AI Explain",
   "explain.hide": "Ukryj",
@@ -300,6 +303,7 @@ const es: Dictionary = {
   "form.detected": "Vídeo reconocido: {id}",
 
   "lyrics.lines": "Líneas: {count}",
+  "lyrics.progress": "Líneas: {total} · Línea actual: {current}",
   "lyrics.autoscroll": "Desplazamiento automático",
   "explain.button": "AI Explain",
   "explain.hide": "Ocultar",

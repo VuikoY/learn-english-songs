@@ -39,7 +39,7 @@ export default function VocabularyPage() {
   }, [items, query]);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    <main className="mx-auto w-full max-w-6xl py-8">
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t("vocab.title")}</h1>
       <p className="mb-6 text-muted-foreground">
         {t("vocab.subtitle", { count: items.length })} · {t("vocab.localNote")}

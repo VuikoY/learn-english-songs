@@ -1,17 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Gamepad2, ScrollText } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Keyboard, Puzzle, ScrollText } from "lucide-react";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import InteractiveLyrics from "@/components/InteractiveLyrics";
 import GameMode from "@/components/game/GameMode";
 import VideoUrlForm from "@/components/VideoUrlForm";
 import { useLanguage } from "@/context/LanguageContext";
 import { DEMO_VIDEO_ID } from "@/lib/mock-lyrics";
+import { countHideableWords } from "@/lib/game/buildRound";
 import { cacheTranscript, getCachedTranscript } from "@/lib/storage/transcriptCache";
 import type { LyricLine } from "@/lib/types";
 import { usePersistentState } from "@/lib/storage/usePersistentState";
+import { DIFFICULTIES, type GameSettings } from "@/types/game";
 
 type View = "read" | "play";
 
@@ -20,12 +21,36 @@ export default function HomePage() {
   const [videoId, setVideoId] = useState(DEMO_VIDEO_ID);
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
+  const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
+  const [gameProgress, setGameProgress] = useState({ current: 0, total: 0 });
+  const [gameStartRequest, setGameStartRequest] = useState(0);
   const [songTitle, setSongTitle] = useState<string | null>(null);
   const [view, setView] = usePersistentState<View>(
     "lingo-clips:active-view",
     "read",
     (value): value is View => value === "read" || value === "play",
   );
+  const [gameSettings, setGameSettings] = usePersistentState<GameSettings>(
+    "lingo-clips:game-settings",
+    { mode: "fill-blanks", difficulty: "easy" },
+    (value): value is GameSettings =>
+      typeof value === "object" && value !== null &&
+      ["fill-blanks", "first-letter"].includes((value as GameSettings).mode) &&
+      DIFFICULTIES.includes((value as GameSettings).difficulty),
+  );
+  const playableLines = useMemo(
+    () => lines.map((line, index) => ({ line, index })).filter(({ line }) => countHideableWords(line.text) >= 3),
+    [lines],
+  );
+  const readLinePosition = useMemo(() => {
+    if (!hasPlaybackStarted) return 0;
+    let position = 0;
+    for (let index = 0; index < playableLines.length; index += 1) {
+      if (playableLines[index].line.start > currentTime) break;
+      position = index + 1;
+    }
+    return position;
+  }, [currentTime, hasPlaybackStarted, playableLines]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +58,16 @@ export default function HomePage() {
   const playerRef = useRef<PlayerHandle>(null);
   const volumeFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const normalVolumeRef = useRef<number | null>(null);
+  const updateGameProgress = useCallback((current: number, total: number) => {
+    setGameProgress((previous) =>
+      previous.current === current && previous.total === total ? previous : { current, total },
+    );
+  }, []);
+  const chooseGameMode = useCallback((mode: GameSettings["mode"]) => {
+    setGameSettings((previous) => ({ ...previous, mode }));
+    setView("play");
+    setGameStartRequest((request) => request + 1);
+  }, [setGameSettings, setView]);
 
   const clearVolumeFade = useCallback(() => {
     if (volumeFadeRef.current !== null) {
@@ -48,6 +83,15 @@ export default function HomePage() {
     if (normalVolumeRef.current !== null) playerRef.current?.setVolume(normalVolumeRef.current);
     playerRef.current?.pause();
   }, [clearVolumeFade]);
+  const handlePlayingChange = useCallback((isPlaying: boolean) => {
+    if (isPlaying) setHasPlaybackStarted(true);
+  }, []);
+  const resetVideoToStart = useCallback(() => {
+    pausePlayer();
+    playerRef.current?.seekTo(0);
+    setCurrentTime(0);
+    setHasPlaybackStarted(false);
+  }, [pausePlayer]);
   function playFrom(seconds: number) {
     playerRef.current?.seekTo(seconds);
     playerRef.current?.play();
@@ -96,6 +140,7 @@ export default function HomePage() {
     setVideoId(id);
     setLines(newLines);
     setCurrentTime(0);
+    setHasPlaybackStarted(false);
     setSongTitle(null);
     fetch(`/api/video-title?videoId=${id}`)
       .then((res) => res.json())
@@ -144,39 +189,56 @@ export default function HomePage() {
   }, [sourceLanguage]);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    <main className="mx-auto w-full max-w-6xl py-8">
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t("app.title")}</h1>
       <p className="mb-6 text-muted-foreground">{t("app.subtitle")}</p>
 
       <VideoUrlForm onSubmit={handleLoad} isLoading={isLoading} error={error} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} />
+        <YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} onPlayingChange={handlePlayingChange} />
 
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={view === "read" ? "secondary" : "outline"}
-              aria-pressed={view === "read"}
-              onClick={() => setView("read")}
-            >
-              <ScrollText className="size-4" />
-              {t("nav.read")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={view === "play" ? "secondary" : "outline"}
-              aria-pressed={view === "play"}
-              onClick={() => setView("play")}
-            >
-              <Gamepad2 className="size-4" />
-              {t("nav.play")}
-            </Button>
+        <div className={`flex flex-col gap-3 ${view === "read" ? "lg:aspect-video" : ""}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                aria-pressed={view === "read"}
+                onClick={() => {
+                  pausePlayer();
+                  setView("read");
+                }}
+                className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${view === "read" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+              >
+                <ScrollText className="size-4" />
+                {t("nav.read")}
+              </button>
+              <div className="flex flex-wrap gap-1" role="group" aria-label={t("game.mode.label")}>
+                <button
+                  type="button"
+                  aria-pressed={gameSettings.mode === "fill-blanks"}
+                  onClick={() => chooseGameMode("fill-blanks")}
+                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${gameSettings.mode === "fill-blanks" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+                >
+                  <Puzzle className="size-4" />
+                  {t("game.mode.fillBlanks")}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={gameSettings.mode === "first-letter"}
+                  onClick={() => chooseGameMode("first-letter")}
+                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${gameSettings.mode === "first-letter" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+                >
+                  <Keyboard className="size-4" />
+                  {t("game.mode.firstLetter")}
+                </button>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              {t("game.line", { ...gameProgress, current: view === "read" ? readLinePosition : gameProgress.current })}
+            </p>
           </div>
-          <div className={view === "read" ? "" : "hidden"}>
+          <div className={view === "read" ? "min-h-0 flex-1" : "hidden"}>
             <InteractiveLyrics
               lines={lines}
               currentTime={currentTime}
@@ -185,7 +247,9 @@ export default function HomePage() {
               onExplainStart={pausePlayer}
             />
           </div>
-          {view === "play" && <GameMode key={videoId} lines={lines} currentTime={currentTime} songTitle={songTitle} onPlayLine={playGameLine} onPause={pausePlayer} onFadeOut={fadeOutGameLine} onCancelFadeOut={cancelGameLineFadeOut} />}
+          <div className={view === "play" ? "" : "hidden"}>
+            <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPause={pausePlayer} onFadeOut={fadeOutGameLine} onCancelFadeOut={cancelGameLineFadeOut} />
+          </div>
         </div>
       </div>
     </main>

@@ -8,7 +8,7 @@ import VocabularyNavLink from "@/components/VocabularyNavLink";
 export default function Header() {
   return (
     <header className="relative z-50 border-b border-border bg-card/85 shadow-sm backdrop-blur-sm">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4">
         <Link href="/" className="font-semibold tracking-tight">
           LingoClips
         </Link>

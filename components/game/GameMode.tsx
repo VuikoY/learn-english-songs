@@ -9,14 +9,11 @@ import {
   Flag,
   Eye,
   EyeOff,
-  Keyboard,
   LogOut,
-  Puzzle,
   RotateCcw,
   Loader2,
   Sparkles,
   ChevronUp,
-  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ScoreBoard from "@/components/game/ScoreBoard";
@@ -25,7 +22,6 @@ import LetterKeyboard from "@/components/game/LetterKeyboard";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
 import SaveToVocabularyButton from "@/components/SaveToVocabularyButton";
 import { useLanguage } from "@/context/LanguageContext";
-import type { TranslationKey } from "@/lib/i18n/dictionary";
 import {
   ALPHABETS,
   buildRound,
@@ -40,9 +36,8 @@ import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
 import { capEntries, usePersistentState } from "@/lib/storage/usePersistentState";
 import {
   DIFFICULTIES,
-  type BankItem,
   type Difficulty,
-  type GameModeId,
+  type BankItem,
   type GamePhase,
   type GameSettings,
   type Round,
@@ -57,38 +52,19 @@ type Props = {
   onFadeOut?: () => void;
   onCancelFadeOut?: () => void;
   songTitle?: string | null;
+  settings: GameSettings;
+  onDifficultyChange: (difficulty: Difficulty) => void;
+  onProgressChange: (current: number, total: number) => void;
+  startRequest: number;
+  hasPlaybackStarted: boolean;
+  onQuit: () => void;
+  active: boolean;
 };
 
 // Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
 
-const MODE_OPTIONS: {
-  id: GameModeId;
-  icon: LucideIcon;
-  title: TranslationKey;
-  description: TranslationKey;
-}[] = [
-  {
-    id: "fill-blanks",
-    icon: Puzzle,
-    title: "game.mode.fillBlanks",
-    description: "game.mode.fillBlanks.desc",
-  },
-  {
-    id: "first-letter",
-    icon: Keyboard,
-    title: "game.mode.firstLetter",
-    description: "game.mode.firstLetter.desc",
-  },
-];
-
-const DIFFICULTY_TEXT: Record<Difficulty, { title: TranslationKey; description: TranslationKey }> = {
-  easy: { title: "game.difficulty.easy", description: "game.difficulty.easy.desc" },
-  medium: { title: "game.difficulty.medium", description: "game.difficulty.medium.desc" },
-  hard: { title: "game.difficulty.hard", description: "game.difficulty.hard.desc" },
-};
-
-export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFadeOut, onCancelFadeOut, songTitle = null }: Props) {
+export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFadeOut, onCancelFadeOut, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const [explanationCache, setExplanationCache] = usePersistentState<Record<string, Explanation>>(
     "lingo-clips:explanations",
@@ -100,15 +76,6 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
 
   // ---------- State ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
-  const [settings, setSettings] = usePersistentState<GameSettings>(
-    "lingo-clips:game-settings",
-    { mode: "fill-blanks", difficulty: "easy" },
-    (value): value is GameSettings =>
-      typeof value === "object" && value !== null &&
-      (value as GameSettings).mode !== undefined &&
-      ["fill-blanks", "first-letter"].includes((value as GameSettings).mode) &&
-      ["easy", "medium", "hard"].includes((value as GameSettings).difficulty),
-  );
   const [game, dispatch] = useReducer(gameReducer, initialGameState); // Score, streak, and multiplier.
   const [round, setRound] = useState<Round | null>(null); // Current line round.
   const [position, setPosition] = useState(0); // Position among playable lines.
@@ -117,6 +84,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
   const lineRef = useRef<HTMLDivElement>(null);
   const timedOutRef = useRef(false);
   const fadingOutLineRef = useRef<LyricLine | null>(null);
+  const handledStartRequestRef = useRef(startRequest);
   const [keyboardHidden, setKeyboardHidden] = usePersistentState<boolean>(
     "lingo-clips:game-keyboard-hidden",
     false,
@@ -132,6 +100,11 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
     [lines],
   );
 
+  useEffect(() => {
+    const current = phase === "setup" ? 0 : Math.min(position + 1, Math.max(playable.length, 1));
+    onProgressChange(current, playable.length);
+  }, [onProgressChange, phase, playable.length, position]);
+
   // Words from the full song are used as distractors.
   const wordPool = useMemo(() => buildWordPool(lines.map((l) => l.text)), [lines]);
 
@@ -139,6 +112,17 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
   const nextBlank = round?.tokens.find((tok) => tok.hidden && !round.filledIds.includes(tok.id));
   const isRoundComplete = round !== null && nextBlank === undefined;
   const currentLine = round ? lines[round.lineIndex] : null;
+
+  // Apply a changed mode to the same active lyric line without advancing or seeking.
+  useEffect(() => {
+    if (phase !== "playing") return;
+    setRound((previous) => {
+      if (!previous) return previous;
+      const line = lines[previous.lineIndex];
+      return line ? buildRound(previous.lineIndex, line.text, settings, wordPool) : previous;
+    });
+    timedOutRef.current = false;
+  }, [phase, settings.mode, settings.difficulty, lines, wordPool]);
   const explainKey = currentLine ? `${sourceLanguage}>${targetLanguage}::${currentLine.text.trim().toLowerCase()}` : "";
   const cachedExplanation = explainKey ? explanationCache[explainKey] : undefined;
   const explanationLineRef = useRef(explainKey);
@@ -187,7 +171,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
   }
 
   useEffect(() => {
-    if (phase !== "playing" || !currentLine) {
+    if (!active || phase !== "playing" || !currentLine) {
       if (fadingOutLineRef.current) {
         onCancelFadeOut?.();
         fadingOutLineRef.current = null;
@@ -213,7 +197,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
       timedOutRef.current = true;
       onPause?.();
     }
-  }, [currentTime, currentLine, isRoundComplete, onCancelFadeOut, onFadeOut, onPause, phase]);
+  }, [active, currentTime, currentLine, isRoundComplete, onCancelFadeOut, onFadeOut, onPause, phase]);
 
   // ---------- Round controls ----------
 
@@ -232,6 +216,36 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
     setPhase("playing");
     onPause?.();
   }
+
+  useEffect(() => {
+    if (handledStartRequestRef.current === startRequest) return;
+    if (!active || playable.length === 0) return;
+
+    if (phase === "playing" && round) {
+      handledStartRequestRef.current = startRequest;
+      timedOutRef.current = false;
+      onPlayLine?.(currentLine?.start ?? playable[position].line.start);
+      return;
+    }
+    if (!hasPlaybackStarted) return;
+
+    let startPosition = -1;
+    for (let index = 0; index < playable.length; index += 1) {
+      const line = playable[index].line;
+      if (currentTime >= line.start && currentTime < line.start + line.duration) {
+        startPosition = index;
+        break;
+      }
+    }
+    if (startPosition < 0) return;
+
+    handledStartRequestRef.current = startRequest;
+    timedOutRef.current = false;
+    dispatch({ type: "reset" });
+    startRound(startPosition);
+    setPhase("playing");
+    onPlayLine?.(playable[startPosition].line.start);
+  }, [active, currentLine, currentTime, hasPlaybackStarted, onPlayLine, phase, playable, position, round, startRequest]);
 
   function goNext() {
     const shouldReplayNext = timedOutRef.current;
@@ -254,7 +268,10 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
 
   function quitToSetup() {
     setRound(null);
+    setPosition(0);
+    timedOutRef.current = false;
     setPhase("setup");
+    onQuit();
   }
 
   // ---------- Answer handling ----------
@@ -312,7 +329,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
     letterHandlerRef.current = handleLetter;
   });
 
-  const isGamePlaying = phase === "playing";
+  const isGamePlaying = phase === "playing" && active;
   useEffect(() => {
     if (!isGamePlaying) return;
 
@@ -367,49 +384,23 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
     return (
       <section className="space-y-6 rounded-xl border bg-card p-5">
         <fieldset className="space-y-2">
-          <legend className="mb-2 text-sm font-medium">{t("game.mode.label")}</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {MODE_OPTIONS.map(({ id, icon: Icon, title, description }) => {
-              const selected = settings.mode === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setSettings((s) => ({ ...s, mode: id }))}
-                  className={`flex flex-col items-start gap-1 rounded border p-3 text-left transition ${
-                    selected ? "border-border bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"
-                  }`}
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <Icon className="size-4" aria-hidden />
-                    {t(title)}
-                  </span>
-                  <span className="text-sm text-muted-foreground">{t(description)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </fieldset>
-
-        <fieldset className="space-y-2">
           <legend className="mb-2 text-sm font-medium">{t("game.difficulty.label")}</legend>
           <div className="grid gap-2 sm:grid-cols-3">
-            {DIFFICULTIES.map((level) => {
-              const selected = settings.difficulty === level;
+            {DIFFICULTIES.map((difficulty) => {
+              const selected = settings.difficulty === difficulty;
               return (
                 <button
-                  key={level}
+                  key={difficulty}
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => setSettings((s) => ({ ...s, difficulty: level }))}
+                  onClick={() => onDifficultyChange(difficulty)}
                   className={`flex flex-col items-start gap-0.5 rounded border p-3 text-left transition ${
                     selected ? "border-border bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"
                   }`}
                 >
-                  <span className="font-medium">{t(DIFFICULTY_TEXT[level].title)}</span>
+                  <span className="font-medium">{t(`game.difficulty.${difficulty}`)}</span>
                   <span className="text-sm text-muted-foreground">
-                    {t(DIFFICULTY_TEXT[level].description)}
+                    {t(`game.difficulty.${difficulty}.desc`)}
                   </span>
                 </button>
               );
@@ -426,6 +417,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
         <Button type="button" className="w-full" disabled={playable.length === 0} onClick={startGame}>
           {t("game.start")}
         </Button>
+
       </section>
     );
   }
@@ -476,22 +468,36 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
         multiplier={game.multiplier}
       />
 
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {t("game.line", { current: position + 1, total: playable.length })}
-        </p>
-        <div className="flex gap-2">
-          {onPlayLine && (
-            <Button type="button" variant="outline" size="sm" onClick={replayCurrentLine}>
-              <ArrowLeft className="size-4" />
-              {t("game.replay")}
-            </Button>
-          )}
-          <Button type="button" variant="ghost" size="sm" onClick={quitToSetup}>
+      <div className={`grid w-full gap-2 ${settings.mode === "first-letter" ? "grid-cols-4" : "grid-cols-3"}`}>
+        {onPlayLine && (
+          <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" onClick={replayCurrentLine}>
+            <ArrowLeft className="size-4" />
+            {t("game.replay")}
+          </Button>
+        )}
+        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" size="sm" variant="outline" disabled={!currentLine || explanationStatus === "loading"} onClick={toggleExplanation}>
+          {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" /> : explanationStatus === "open" ? <ChevronUp className="size-4" /> : <Sparkles className="size-4" />}
+          {explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
+        </Button>
+        {settings.mode === "first-letter" && (
+          <Button
+            className="w-full min-w-0 whitespace-normal px-2"
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-expanded={!keyboardHidden}
+            onClick={() => setKeyboardHidden((hidden) => !hidden)}
+          >
+            {keyboardHidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+            {keyboardHidden ? t("game.keyboard.show") : t("game.keyboard.hide")}
+          </Button>
+        )}
+        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="ghost" size="sm" onClick={quitToSetup}>
+          <span className="flex w-full items-center justify-end gap-2">
             <LogOut className="size-4" />
             {t("game.quit")}
-          </Button>
-        </div>
+          </span>
+        </Button>
       </div>
 
       {/* Song line. The ref is used for the shake animation. */}
@@ -536,24 +542,6 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
 
       {/* Bottom floating panel for AI actions, the word bank, or the keyboard. */}
       <div className="sticky bottom-3 z-10 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Button type="button" size="sm" variant="outline" disabled={!currentLine || explanationStatus === "loading"} onClick={toggleExplanation}>
-            {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" /> : explanationStatus === "open" ? <ChevronUp className="size-4" /> : <Sparkles className="size-4" />}
-            {explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
-          </Button>
-          {settings.mode === "first-letter" && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              aria-expanded={!keyboardHidden}
-              onClick={() => setKeyboardHidden((hidden) => !hidden)}
-            >
-              {keyboardHidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-              {keyboardHidden ? t("game.keyboard.show") : t("game.keyboard.hide")}
-            </Button>
-          )}
-        </div>
         {explanationStatus === "loading" && <ExplanationSkeleton />}
         {explanationStatus === "error" && <p role="alert" className="text-sm text-destructive">{explanationError}</p>}
         {explanationStatus === "open" && cachedExplanation && currentLine && (
