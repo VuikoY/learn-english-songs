@@ -1,7 +1,7 @@
 // components/InteractiveLyrics.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronUp, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
@@ -70,9 +70,6 @@ export default function InteractiveLyrics({
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const langKey = `${sourceLanguage}>${targetLanguage}`;
 
-  // DOM reference for the active line.
-  const activeLineRef = useRef<HTMLDivElement | null>(null);
-
   // Active line is the one whose [start, start + duration) interval contains currentTime.
   const activeIndex = useMemo(
     () =>
@@ -80,10 +77,14 @@ export default function InteractiveLyrics({
     [lines, currentTime],
   );
 
-  // Keep the active lyric line centered while playback advances.
-  useEffect(() => {
-    activeLineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeIndex]);
+  // When playback is between captions, keep the most recently started line active.
+  const currentLineIndex = useMemo(() => {
+    if (activeIndex >= 0) return activeIndex;
+    const lastStartedIndex = lines.findLastIndex((line) => line.start <= currentTime);
+    return lastStartedIndex >= 0 ? lastStartedIndex : 0;
+  }, [activeIndex, currentTime, lines]);
+  const visibleStart = Math.max(0, Math.min(currentLineIndex - 1, lines.length - 3));
+  const visibleLines = lines.slice(visibleStart, visibleStart + 3);
 
   // Update one line's state; undefined closes the panel.
   function setLineState(id: string, state: LineState | undefined) {
@@ -153,52 +154,75 @@ export default function InteractiveLyrics({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
-      {/* Scrollable lyric list. */}
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-xl border bg-card p-3">
-        {lines.map((line, index) => {
+    <div className="flex flex-col gap-2">
+      <div className="space-y-1">
+        {visibleLines.map((line, visibleIndex) => {
+          const index = visibleStart + visibleIndex;
           const id = lineId(line, index, langKey);
-          const isActive = index === activeIndex;
+          const isActive = index === currentLineIndex;
+          const isCurrent = index === activeIndex || (
+            activeIndex < 0 &&
+            index === currentLineIndex &&
+            currentTime >= line.start + line.duration &&
+            currentTime < line.start + line.duration + 1
+          );
           const state = lineStates[id];
           const cached = explanationCache[cacheKey(line.text, langKey)];
+          const elapsed = Math.max(0, Math.min(currentTime - line.start, line.duration));
+          const progress = isCurrent && line.duration > 0
+            ? Math.round((elapsed / line.duration) * 100)
+            : 0;
 
           return (
             <div
               key={id}
-              // Attach the ref only to the active line, which the effect centers in view.
-              ref={isActive ? activeLineRef : null}
-              className={`rounded px-3 py-2 transition-colors ${
-                isActive ? "bg-primary/10" : "hover:bg-muted/60"
-              }`}
+              className="relative rounded px-1 py-2"
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="relative z-10 flex items-start justify-center">
                 <button
                   type="button"
                   onClick={() => onSeek(line.start)}
-                  className={`text-left text-lg leading-snug ${
+                  className={`w-full px-24 text-center text-lg leading-snug ${
                     isActive ? "font-semibold text-foreground" : "text-muted-foreground"
                   }`}
                 >
-                  {line.text}
+                  <span className="relative inline-block max-w-full px-3">
+                    {isCurrent && (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 rounded-sm bg-sky-100/50 dark:bg-sky-300/10"
+                        />
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-0 left-0 rounded-sm bg-sky-200/80 transition-[width] duration-300 dark:bg-sky-300/25"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </>
+                    )}
+                    <span className="relative z-10">{line.text}</span>
+                  </span>
                 </button>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  disabled={state?.kind === "loading"}
-                  onClick={() => handleExplain(index)}
-                >
-                  {state?.kind === "loading" ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : state?.kind === "open" ? (
-                    <ChevronUp className="size-4" />
-                  ) : (
-                    <Sparkles className="size-4" />
-                  )}
-                  {state?.kind === "open" ? t("explain.hide") : t("explain.button")}
-                </Button>
+                {isActive && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="absolute right-0 top-0 shrink-0"
+                    disabled={state?.kind === "loading"}
+                    onClick={() => handleExplain(index)}
+                  >
+                    {state?.kind === "loading" ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : state?.kind === "open" ? (
+                      <ChevronUp className="size-4" />
+                    ) : (
+                      <Sparkles className="size-4" />
+                    )}
+                    {state?.kind === "open" ? t("explain.hide") : t("explain.button")}
+                  </Button>
+                )}
               </div>
 
               {/* Render content below the line based on its state. */}

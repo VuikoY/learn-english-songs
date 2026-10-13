@@ -195,10 +195,8 @@ export default function HomePage() {
 
       <VideoUrlForm onSubmit={handleLoad} isLoading={isLoading} error={error} />
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} onPlayingChange={handlePlayingChange} />
-
-        <div className={`flex flex-col gap-3 ${view === "read" ? "lg:aspect-video" : ""}`}>
+      <div className="mx-auto mt-3 flex w-full flex-col gap-3 lg:w-[65%]">
+        <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -216,18 +214,18 @@ export default function HomePage() {
               <div className="flex flex-wrap gap-1" role="group" aria-label={t("game.mode.label")}>
                 <button
                   type="button"
-                  aria-pressed={gameSettings.mode === "fill-blanks"}
+                  aria-pressed={view === "play" && gameSettings.mode === "fill-blanks"}
                   onClick={() => chooseGameMode("fill-blanks")}
-                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${gameSettings.mode === "fill-blanks" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${view === "play" && gameSettings.mode === "fill-blanks" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
                 >
                   <Puzzle className="size-4" />
                   {t("game.mode.fillBlanks")}
                 </button>
                 <button
                   type="button"
-                  aria-pressed={gameSettings.mode === "first-letter"}
+                  aria-pressed={view === "play" && gameSettings.mode === "first-letter"}
                   onClick={() => chooseGameMode("first-letter")}
-                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${gameSettings.mode === "first-letter" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${view === "play" && gameSettings.mode === "first-letter" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
                 >
                   <Keyboard className="size-4" />
                   {t("game.mode.firstLetter")}
@@ -238,18 +236,21 @@ export default function HomePage() {
               {t("game.line", { ...gameProgress, current: view === "read" ? readLinePosition : gameProgress.current })}
             </p>
           </div>
-          <div className={view === "read" ? "min-h-0 flex-1" : "hidden"}>
-            <InteractiveLyrics
-              lines={lines}
-              currentTime={currentTime}
-              songTitle={songTitle}
-              onSeek={playFrom}
-              onExplainStart={pausePlayer}
-            />
-          </div>
-          <div className={view === "play" ? "" : "hidden"}>
-            <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPause={pausePlayer} onFadeOut={fadeOutGameLine} onCancelFadeOut={cancelGameLineFadeOut} />
-          </div>
+        </div>
+
+        <YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} onPlayingChange={handlePlayingChange} />
+
+        <div className={view === "read" ? "mx-auto w-full lg:w-[85%]" : "hidden"}>
+          <InteractiveLyrics
+            lines={lines}
+            currentTime={currentTime}
+            songTitle={songTitle}
+            onSeek={playFrom}
+            onExplainStart={pausePlayer}
+          />
+        </div>
+        <div className={view === "play" ? "" : "hidden"}>
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPause={pausePlayer} onFadeOut={fadeOutGameLine} onCancelFadeOut={cancelGameLineFadeOut} />
         </div>
       </div>
     </main>
