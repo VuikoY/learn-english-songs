@@ -20,7 +20,8 @@ import {
 
 // Splits "(Don't," into leading punctuation, the word itself, and trailing punctuation.
 // Apostrophes and censor symbols inside words are preserved: f*ck, sh*t, f#ck.
-const WORD_PARTS = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/su;
+// Tokens are split on whitespace above, so dotAll is unnecessary here.
+const WORD_PARTS = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u;
 
 export function tokenizeLine(text: string): WordToken[] {
   return text

@@ -18,16 +18,20 @@ export function usePersistentState<T>(
 
   // Read after mount because localStorage is unavailable during server rendering.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw !== null) {
-        const parsed: unknown = JSON.parse(raw);
-        if (!validate || validate(parsed)) setValue(parsed as T);
+    let active = true;
+    queueMicrotask(() => {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw !== null) {
+          const parsed: unknown = JSON.parse(raw);
+          if (active && (!validate || validate(parsed))) setValue(parsed as T);
+        }
+      } catch {
+        // Keep the initial value if JSON is invalid or localStorage is unavailable.
       }
-    } catch {
-      // Keep the initial value if JSON is invalid or localStorage is unavailable.
-    }
-    setHydrated(true);
+      if (active) setHydrated(true);
+    });
+    return () => { active = false; };
     // The validator is stable and does not need to trigger another storage read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

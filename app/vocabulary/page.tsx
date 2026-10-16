@@ -24,7 +24,7 @@ function exportJson(items: VocabularyItem[]) {
 
 export default function VocabularyPage() {
   const { t } = useLanguage();
-  const { items } = useVocabulary();
+  const { items, removeWord } = useVocabulary();
   const [query, setQuery] = useState("");
 
   // Search original phrases, translations, and song titles.
@@ -83,7 +83,7 @@ export default function VocabularyPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((item) => (
-                <VocabularyCard key={item.id} item={item} />
+                <VocabularyCard key={item.id} item={item} onRemove={removeWord} />
               ))}
             </div>
           )}

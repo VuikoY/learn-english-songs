@@ -43,7 +43,7 @@ export default function SaveToVocabularyButton({ original, explanation, songTitl
       <Button
         type="button"
         size="sm"
-        variant={isSaved ? "secondary" : "outline"}
+        variant={isSaved ? "default" : "outline"}
         disabled={isSaved}
         onClick={handleSave}
       >

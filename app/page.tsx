@@ -54,6 +54,8 @@ export default function HomePage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transcriptSaved, setTranscriptSaved] = useState(false);
+  const [transcriptMessage, setTranscriptMessage] = useState("");
 
   const playerRef = useRef<PlayerHandle>(null);
   const volumeFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -142,6 +144,8 @@ export default function HomePage() {
     setCurrentTime(0);
     setHasPlaybackStarted(false);
     setSongTitle(null);
+    setTranscriptSaved(false);
+    setTranscriptMessage("");
     fetch(`/api/video-title?videoId=${id}`)
       .then((res) => res.json())
       .then((data: { title: string | null }) => setSongTitle(data.title ?? null))
@@ -164,27 +168,26 @@ export default function HomePage() {
         json = JSON.parse(raw);
       } catch {
         throw new Error(
-          `Сервер вернул не JSON (статус ${response.status}). Проверь ошибку в терминале, где запущен npm run dev.`,
+          t("home.serverNonJson", { status: response.status }),
         );
       }
 
       if (!response.ok) {
-        const message = (json as { error?: string }).error;
-        throw new Error(message ?? "Не удалось загрузить субтитры.");
+        throw new Error(t("home.loadError"));
       }
 
       const newLines = json as LyricLine[];
       cacheTranscript(id, sourceLanguage, newLines);
       showVideo(id, newLines);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Неизвестная ошибка.");
+      setError(e instanceof Error ? e.message : t("home.unknownError"));
     } finally {
       setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    void handleLoad(DEMO_VIDEO_ID);
+    queueMicrotask(() => void handleLoad(DEMO_VIDEO_ID));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceLanguage]);
 
@@ -194,6 +197,14 @@ export default function HomePage() {
       <p className="mb-6 text-muted-foreground">{t("app.subtitle")}</p>
 
       <VideoUrlForm onSubmit={handleLoad} isLoading={isLoading} error={error} />
+      {lines.length > 0 && <div className="mx-auto mt-2 flex w-full items-center gap-3 lg:w-[65%]">
+        <button type="button" disabled={transcriptSaved} onClick={async () => {
+          const response = await fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId, language: sourceLanguage, lines }) });
+          setTranscriptMessage(response.ok ? t("transcript.saved") : t("transcript.saveError"));
+          if (response.ok) setTranscriptSaved(true);
+        }} className="rounded border px-3 py-1.5 text-xs hover:bg-muted">{t("transcript.confirm")}</button>
+        {transcriptMessage && <span role="status" className="text-xs text-muted-foreground">{transcriptMessage}</span>}
+      </div>}
 
       <div className="mx-auto mt-3 flex w-full flex-col gap-3 lg:w-[65%]">
         <div className="flex flex-col gap-1">

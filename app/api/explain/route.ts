@@ -42,6 +42,42 @@ const RESPONSE_SCHEMA = {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function safeProviderStatus(value: unknown): string | null {
+  return typeof value === "string" && /^[A-Z0-9_]{1,48}$/.test(value) ? value : null;
+}
+
+function geminiFailureCategory(httpStatus: number, providerStatus: string | null): string {
+  if (httpStatus === 401 || httpStatus === 403 || providerStatus === "UNAUTHENTICATED" || providerStatus === "PERMISSION_DENIED") return "api_key_or_model_access";
+  if (httpStatus === 404 || providerStatus === "NOT_FOUND") return "model_or_endpoint_not_found";
+  if (httpStatus === 429 || providerStatus === "RESOURCE_EXHAUSTED") return "quota_or_rate_limit";
+  if (httpStatus === 400 || providerStatus === "INVALID_ARGUMENT") return "invalid_request_or_model_configuration";
+  if (httpStatus >= 500) return "google_service_error";
+  return "provider_rejected_request";
+}
+
+function logGeminiFailure(details: {
+  category: string;
+  httpStatus?: number;
+  providerCode?: number | null;
+  providerStatus?: string | null;
+  errorType?: string;
+  finishReason?: string | null;
+}) {
+  // Never log the API key, provider message/body, prompt, or generated text.
+  console.error("[explain] Gemini request failed", {
+    ...details,
+    modelConfigured: Boolean(process.env.GEMINI_MODEL),
+  });
+}
+
+function logSupabaseError(operation: string, error: { code?: string; status?: number }) {
+  console.error("[explain] Supabase request failed", {
+    operation,
+    code: error.code ?? "unknown",
+    status: error.status ?? null,
+  });
+}
+
 export async function POST(request: Request) {
   // ---------- 1. Validate the request ----------
   let body: unknown;
@@ -72,10 +108,26 @@ export async function POST(request: Request) {
   }
 
   let supabase: Awaited<ReturnType<typeof createSupabaseServerClient>> = null;
-  try { supabase = await createSupabaseServerClient(); } catch { /* Continue without the database cache. */ }
+  try { supabase = await createSupabaseServerClient(); } catch (error) {
+    console.error("[explain] Supabase client initialization failed", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+  let mayWriteSharedCache = false;
   if (supabase) {
     try {
-      const { data } = await supabase
+      const { data: { user }, error } = await supabase.auth.getUser();
+      mayWriteSharedCache = Boolean(user && !user.is_anonymous);
+      if (error) logSupabaseError("auth_user_lookup", error);
+    } catch (error) {
+      console.error("[explain] Supabase auth lookup threw", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+  }
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
         .from("line_explanations")
         .select("explanation_json")
         .eq("line_text", text)
@@ -83,14 +135,19 @@ export async function POST(request: Request) {
         .eq("target_language", targetLanguage)
         .eq("context", context)
         .maybeSingle();
+      if (error) logSupabaseError("explanation_cache_lookup", error);
       if (data && isExplanation(data.explanation_json)) return NextResponse.json(data.explanation_json);
-    } catch { /* Cache miss or database unavailable: generate the explanation. */ }
+    } catch (error) {
+      console.error("[explain] Supabase cache lookup threw", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
   }
 
   async function cacheExplanation(explanation: unknown) {
-    if (!supabase || !isExplanation(explanation)) return;
+    if (!supabase || !mayWriteSharedCache || !isExplanation(explanation)) return;
     try {
-      await supabase.from("line_explanations").upsert(
+      const { error } = await supabase.from("line_explanations").upsert(
         {
           line_text: text,
           source_language: sourceLanguage,
@@ -100,20 +157,25 @@ export async function POST(request: Request) {
         },
         { onConflict: "line_text,source_language,target_language,context" },
       );
-    } catch { /* Do not fail the AI response when cache writes fail. */ }
+      if (error) logSupabaseError("explanation_cache_write", error);
+    } catch (error) {
+      console.error("[explain] Supabase cache write threw", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
   }
 
   // ---------- 2. Mock mode ----------
   if (process.env.MOCK_AI === "true") {
     await delay(700); // Simulate network latency so the loading skeleton is visible.
     const explanation = mockExplanation(text, targetLanguage);
-    await cacheExplanation(explanation);
     return NextResponse.json(explanation);
   }
 
   // ---------- 3. Gemini ----------
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || /^(your|replace|example|placeholder|gemini_api_key|api[_ -]?key)/i.test(apiKey)) {
+    logGeminiFailure({ category: apiKey ? "placeholder_api_key" : "missing_api_key" });
     return NextResponse.json(
       { error: "GEMINI_API_KEY отсутствует в .env.local или содержит шаблон. Укажи действительный ключ и перезапусти dev-сервер." },
       { status: 500 },
@@ -139,7 +201,15 @@ export async function POST(request: Request) {
     });
 
     if (!geminiResponse.ok) {
-      console.error("Gemini request rejected with status:", geminiResponse.status);
+      let providerError: { code?: unknown; status?: unknown } | undefined;
+      try {
+        const body = await geminiResponse.json() as { error?: { code?: unknown; status?: unknown } };
+        providerError = body?.error;
+      } catch { /* Keep status diagnostics when the upstream body is not JSON. */ }
+      const providerCode = typeof providerError?.code === "number" ? providerError.code : null;
+      const providerStatus = safeProviderStatus(providerError?.status);
+      const category = geminiFailureCategory(geminiResponse.status, providerStatus);
+      logGeminiFailure({ category, httpStatus: geminiResponse.status, providerCode, providerStatus });
       const error = geminiResponse.status === 400 || geminiResponse.status === 403
         ? "Gemini отклонил API-ключ или доступ к модели. Проверь ключ и его разрешения в Google AI Studio."
         : "Сервис ИИ временно недоступен. Попробуй ещё раз.";
@@ -151,6 +221,14 @@ export async function POST(request: Request) {
 
     const data = await geminiResponse.json();
     const rawJson: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawJson) {
+      const finishReason = data?.promptFeedback?.blockReason ?? data?.candidates?.[0]?.finishReason;
+      logGeminiFailure({
+        category: "empty_or_blocked_model_response",
+        httpStatus: geminiResponse.status,
+        finishReason: safeProviderStatus(finishReason),
+      });
+    }
     if (!rawJson) throw new Error("Модель вернула пустой ответ.");
 
     const parsed: unknown = JSON.parse(rawJson);
@@ -159,7 +237,14 @@ export async function POST(request: Request) {
     await cacheExplanation(parsed);
     return NextResponse.json(parsed);
   } catch (error) {
-    console.error("Explain route failed:", error);
+    logGeminiFailure({
+      category: error instanceof SyntaxError
+        ? "invalid_provider_or_model_json"
+        : error instanceof TypeError
+          ? "upstream_transport_error"
+          : "response_processing_error",
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
     return NextResponse.json({ error: "Не удалось обработать ответ ИИ." }, { status: 500 });
   }
 }

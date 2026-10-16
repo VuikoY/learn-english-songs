@@ -136,10 +136,10 @@ export default function InteractiveLyrics({
       try {
         json = JSON.parse(raw);
       } catch {
-        throw new Error(`Сервер вернул не JSON (статус ${response.status}). Проверь терминал.`);
+        throw new Error(t("explain.serverNonJson", { status: response.status }));
       }
       if (!response.ok) {
-        throw new Error(typeof json.error === "string" ? json.error : "Не вдалося отримати пояснення");
+        throw new Error(t("explain.requestError"));
       }
 
       // Cache the response and expand the card.
@@ -148,7 +148,7 @@ export default function InteractiveLyrics({
       );
       setLineState(id, { kind: "open" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Неизвестная ошибка.";
+      const message = error instanceof Error ? error.message : t("explain.unknownError");
       setLineState(id, { kind: "error", message });
     }
   }

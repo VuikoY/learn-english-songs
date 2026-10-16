@@ -5,8 +5,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   ArrowLeft,
-  Check,
-  Flag,
   Eye,
   EyeOff,
   LogOut,
@@ -116,10 +114,12 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
   // Apply a changed mode to the same active lyric line without advancing or seeking.
   useEffect(() => {
     if (phase !== "playing") return;
-    setRound((previous) => {
-      if (!previous) return previous;
-      const line = lines[previous.lineIndex];
-      return line ? buildRound(previous.lineIndex, line.text, settings, wordPool) : previous;
+    queueMicrotask(() => {
+      setRound((previous) => {
+        if (!previous) return previous;
+        const line = lines[previous.lineIndex];
+        return line ? buildRound(previous.lineIndex, line.text, settings, wordPool) : previous;
+      });
     });
     timedOutRef.current = false;
   }, [phase, settings.mode, settings.difficulty, lines, wordPool]);
@@ -240,11 +240,13 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
     if (startPosition < 0) return;
 
     handledStartRequestRef.current = startRequest;
-    timedOutRef.current = false;
-    dispatch({ type: "reset" });
-    startRound(startPosition);
-    setPhase("playing");
-    onPlayLine?.(playable[startPosition].line.start);
+    queueMicrotask(() => {
+      timedOutRef.current = false;
+      dispatch({ type: "reset" });
+      startRound(startPosition);
+      setPhase("playing");
+      onPlayLine?.(playable[startPosition].line.start);
+    });
   }, [active, currentLine, currentTime, hasPlaybackStarted, onPlayLine, phase, playable, position, round, startRequest]);
 
   function goNext() {
