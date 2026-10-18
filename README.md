@@ -20,7 +20,7 @@ Import this repository into Vercel with the Next.js defaults. Configure these en
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (server-only; never use a `NEXT_PUBLIC_` prefix)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only; used for shared explanation caching and transcript confirmation; never use a `NEXT_PUBLIC_` prefix)
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL` (optional; defaults to `gemini-flash-latest`)
 - `MOCK_AI=false`

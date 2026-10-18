@@ -6,7 +6,6 @@ import { Keyboard, Puzzle, ScrollText } from "lucide-react";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import InteractiveLyrics from "@/components/InteractiveLyrics";
 import GameMode from "@/components/game/GameMode";
-import VideoUrlForm from "@/components/VideoUrlForm";
 import { useLanguage } from "@/context/LanguageContext";
 import { DEMO_VIDEO_ID } from "@/lib/mock-lyrics";
 import { countHideableWords } from "@/lib/game/buildRound";
@@ -57,10 +56,7 @@ export default function HomePage() {
     return position;
   }, [currentTime, hasPlaybackStarted, playableLines]);
 
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [transcriptSaved, setTranscriptSaved] = useState(false);
-  const [transcriptMessage, setTranscriptMessage] = useState("");
 
   const playerRef = useRef<PlayerHandle>(null);
   const volumeFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -124,33 +120,12 @@ export default function HomePage() {
     }, 50);
   }, [clearVolumeFade]);
 
-  const fadeOutGameLine = useCallback(() => {
-    const player = playerRef.current;
-    if (!player) return;
-
-    clearVolumeFade();
-    const startVolume = player.getVolume();
-    const fadeStartedAt = performance.now();
-    volumeFadeRef.current = setInterval(() => {
-      const progress = Math.min((performance.now() - fadeStartedAt) / 1000, 1);
-      player.setVolume(Math.round(startVolume * (1 - progress)));
-      if (progress >= 1) clearVolumeFade();
-    }, 50);
-  }, [clearVolumeFade]);
-
-  const cancelGameLineFadeOut = useCallback(() => {
-    clearVolumeFade();
-    if (normalVolumeRef.current !== null) playerRef.current?.setVolume(normalVolumeRef.current);
-  }, [clearVolumeFade]);
-
   function showVideo(id: string, newLines: LyricLine[], savedTitle?: string) {
     setVideoId(id);
     setLines(newLines);
     setCurrentTime(0);
     setHasPlaybackStarted(false);
     setSongTitle(savedTitle ?? null);
-    setTranscriptSaved(savedTitle !== undefined);
-    setTranscriptMessage("");
     if (savedTitle !== undefined) return;
     fetch(`/api/video-title?videoId=${id}`)
       .then((res) => res.json())
@@ -160,7 +135,6 @@ export default function HomePage() {
 
   async function handleLoad(id: string) {
     setError(null);
-    setIsLoading(true);
     try {
       const db = getSupabaseBrowserClient();
       if (db) {
@@ -201,8 +175,6 @@ export default function HomePage() {
       showVideo(id, newLines);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("home.unknownError"));
-    } finally {
-      setIsLoading(false);
     }
   }
 
@@ -219,24 +191,13 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl py-8">
-      {view !== "play" && <>
-        <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t("app.title")}</h1>
-        <p className="mb-6 text-muted-foreground">{t("app.subtitle")}</p>
-        <VideoUrlForm onSubmit={handleLoad} isLoading={isLoading} error={error} />
-      </>}
-      {view !== "play" && lines.length > 0 && <div className="mx-auto mt-2 flex w-full items-center gap-3 lg:w-[65%]">
-        <button type="button" disabled={transcriptSaved} onClick={async () => {
-          const response = await fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId, language: sourceLanguage, lines }) });
-          setTranscriptMessage(response.ok ? t("transcript.saved") : t("transcript.saveError"));
-          if (response.ok) setTranscriptSaved(true);
-        }} className="rounded border px-3 py-1.5 text-xs hover:bg-muted">{t("transcript.confirm")}</button>
-        {transcriptMessage && <span role="status" className="text-xs text-muted-foreground">{transcriptMessage}</span>}
-      </div>}
+      {error && <p role="alert" className="mx-auto mb-3 w-full text-sm text-destructive lg:w-[65%]">{error}</p>}
 
       <div className="mx-auto mt-3 flex w-full flex-col gap-3 lg:w-[65%]">
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("game.mode.label")}>
               <button
                 type="button"
                 aria-pressed={view === "read"}
@@ -244,17 +205,16 @@ export default function HomePage() {
                   pausePlayer();
                   setView("read");
                 }}
-                className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${view === "read" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+                className={`flex h-9 items-center gap-2 rounded border px-3 text-xs text-left transition-all duration-200 ${view === "read" ? "scale-[1.03] border-primary bg-primary font-bold text-primary-foreground shadow-lg ring-2 ring-primary/50" : "border-border bg-card font-medium text-muted-foreground hover:border-primary/60 hover:bg-muted"}`}
               >
                 <ScrollText className="size-4" />
                 {t("nav.read")}
               </button>
-              <div className="flex flex-wrap gap-1" role="group" aria-label={t("game.mode.label")}>
                 <button
                   type="button"
                   aria-pressed={view === "play" && gameSettings.mode === "fill-blanks"}
                   onClick={() => chooseGameMode("fill-blanks")}
-                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${view === "play" && gameSettings.mode === "fill-blanks" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+                  className={`flex h-9 items-center gap-2 rounded border px-3 text-xs text-left transition-all duration-200 ${view === "play" && gameSettings.mode === "fill-blanks" ? "scale-[1.03] border-primary bg-primary font-bold text-primary-foreground shadow-lg ring-2 ring-primary/50" : "border-border bg-card font-medium text-muted-foreground hover:border-primary/60 hover:bg-muted"}`}
                 >
                   <Puzzle className="size-4" />
                   {t("game.mode.fillBlanks")}
@@ -263,7 +223,7 @@ export default function HomePage() {
                   type="button"
                   aria-pressed={view === "play" && gameSettings.mode === "first-letter"}
                   onClick={() => chooseGameMode("first-letter")}
-                  className={`flex h-8 items-center gap-2 rounded border px-3 text-xs font-medium text-left transition ${view === "play" && gameSettings.mode === "first-letter" ? "bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"}`}
+                  className={`flex h-9 items-center gap-2 rounded border px-3 text-xs text-left transition-all duration-200 ${view === "play" && gameSettings.mode === "first-letter" ? "scale-[1.03] border-primary bg-primary font-bold text-primary-foreground shadow-lg ring-2 ring-primary/50" : "border-border bg-card font-medium text-muted-foreground hover:border-primary/60 hover:bg-muted"}`}
                 >
                   <Keyboard className="size-4" />
                   {t("game.mode.firstLetter")}
@@ -289,7 +249,7 @@ export default function HomePage() {
           />
         </div>
         <div className={view === "play" ? "" : "hidden"}>
-          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPause={pausePlayer} onFadeOut={fadeOutGameLine} onCancelFadeOut={cancelGameLineFadeOut} />
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPause={pausePlayer} />
         </div>
       </div>
     </main>

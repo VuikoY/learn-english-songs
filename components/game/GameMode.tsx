@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
+  ArrowDown,
   ArrowLeft,
   Eye,
   EyeOff,
@@ -18,9 +19,7 @@ import ScoreBoard from "@/components/game/ScoreBoard";
 import WordBank from "@/components/game/WordBank";
 import LetterKeyboard from "@/components/game/LetterKeyboard";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
-import SaveToVocabularyButton from "@/components/SaveToVocabularyButton";
 import { useLanguage } from "@/context/LanguageContext";
-import { useAuthState } from "@/context/AuthContext";
 import {
   ALPHABETS,
   buildRound,
@@ -32,7 +31,8 @@ import {
 } from "@/lib/game/buildRound";
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
 import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
-import { capEntries, usePersistentState } from "@/lib/storage/usePersistentState";
+import { usePersistentState } from "@/lib/storage/usePersistentState";
+import { readExplanationCache } from "@/lib/explanations/cache";
 import {
   DIFFICULTIES,
   type Difficulty,
@@ -49,8 +49,6 @@ type Props = {
   /** Seeks to a song line and starts playback. */
   onPlayLine?: (startSeconds: number) => void;
   onPause?: () => void;
-  onFadeOut?: () => void;
-  onCancelFadeOut?: () => void;
   songTitle?: string | null;
   settings: GameSettings;
   onDifficultyChange: (difficulty: Difficulty) => void;
@@ -63,15 +61,10 @@ type Props = {
 
 // Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
+const INCOMPLETE_LINE_PAUSE_DELAY_SECONDS = 1;
 
-export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, onPause, onFadeOut, onCancelFadeOut, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, onPause, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
-  const { userId } = useAuthState();
-  const [explanationCache, setExplanationCache] = usePersistentState<Record<string, Explanation>>(
-    "lingo-clips:explanations",
-    {},
-    (value): value is Record<string, Explanation> => typeof value === "object" && value !== null && !Array.isArray(value) && Object.values(value).every(isExplanation),
-  );
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
   const [explanationError, setExplanationError] = useState("");
   const [remoteExplanation, setRemoteExplanation] = useState<Explanation | null>(null);
@@ -84,8 +77,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
   const [shakeKey, setShakeKey] = useState(0); // Increment to trigger the error shake animation.
 
   const lineRef = useRef<HTMLDivElement>(null);
-  const timedOutRef = useRef(false);
-  const fadingOutLineRef = useRef<LyricLine | null>(null);
   const handledStartRequestRef = useRef(startRequest);
   const [keyboardHidden, setKeyboardHidden] = usePersistentState<boolean>(
     "lingo-clips:game-keyboard-hidden",
@@ -125,10 +116,8 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
         return line ? buildRound(previous.lineIndex, line.text, settings, wordPool) : previous;
       });
     });
-    timedOutRef.current = false;
   }, [phase, settings.mode, settings.difficulty, lines, wordPool]);
   const explainKey = currentLine ? `${sourceLanguage}>${targetLanguage}::${currentLine.text.trim().toLowerCase()}` : "";
-  const cachedExplanation = remoteExplanation ?? (youtubeId || userId ? undefined : explainKey ? explanationCache[explainKey] : undefined);
   const explanationLineKey = `${youtubeId ?? ""}:${round?.lineIndex ?? ""}:${explainKey}`;
   const explanationLineRef = useRef(explanationLineKey);
   useEffect(() => {
@@ -146,13 +135,31 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
       return;
     }
     onPause?.();
-    if (cachedExplanation) {
-      setExplanationStatus("open");
-      return;
-    }
+    const context = lines.slice(Math.max(0, round!.lineIndex - 1), round!.lineIndex + 2)
+      .filter((_, index) => index !== round!.lineIndex - Math.max(0, round!.lineIndex - 1))
+      .map((line) => line.text)
+      .join(" ");
     setExplanationStatus("loading");
     setExplanationError("");
     try {
+      let databaseExplanation: Explanation | null = null;
+      try {
+        databaseExplanation = await readExplanationCache({
+          youtubeId,
+          lineIndex: round!.lineIndex,
+          text: currentLine.text,
+          sourceLanguage,
+          targetLanguage,
+          context,
+        });
+      } catch {
+        // The API route will make its own cache lookup if the browser cannot reach Supabase.
+      }
+      if (databaseExplanation) {
+        setRemoteExplanation(databaseExplanation);
+        setExplanationStatus("open");
+        return;
+      }
       const response = await fetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -160,7 +167,7 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
           text: currentLine.text,
           youtubeId,
           lineIndex: round!.lineIndex,
-          context: lines.slice(Math.max(0, round!.lineIndex - 1), round!.lineIndex + 2).filter((_, index) => index !== round!.lineIndex - Math.max(0, round!.lineIndex - 1)).map((line) => line.text).join(" "),
+          context,
           sourceLanguage,
           targetLanguage,
         }),
@@ -171,7 +178,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
       if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not get an explanation.");
       if (!isExplanation(result)) throw new Error("The explanation response has an invalid format.");
       setRemoteExplanation(result);
-      if (!youtubeId && !userId) setExplanationCache((previous) => capEntries({ ...previous, [explainKey]: result }, 500));
       setExplanationStatus("open");
     } catch (error) {
       setExplanationError(error instanceof Error ? error.message : "Unknown error");
@@ -181,32 +187,39 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
   useEffect(() => {
     if (!active || phase !== "playing" || !currentLine) {
-      if (fadingOutLineRef.current) {
-        onCancelFadeOut?.();
-        fadingOutLineRef.current = null;
-      }
       return;
     }
 
-    if (isRoundComplete) {
-      if (fadingOutLineRef.current === currentLine) {
-        onCancelFadeOut?.();
-        fadingOutLineRef.current = null;
-      }
-      return;
-    }
-
+    const nextLineStart = playable[position + 1]?.line.start;
+    const isLastLine = position === playable.length - 1;
     const lineEnd = currentLine.start + currentLine.duration;
-    if (currentTime >= lineEnd && fadingOutLineRef.current !== currentLine) {
-      fadingOutLineRef.current = currentLine;
-      onFadeOut?.();
+
+    // Keep the line tied to the song timeline, but pause at its boundary if
+    // the learner has not filled every blank yet.
+    const lineBoundary = nextLineStart === undefined ? lineEnd : Math.min(lineEnd, nextLineStart);
+    if (!isRoundComplete && currentTime >= lineBoundary + INCOMPLETE_LINE_PAUSE_DELAY_SECONDS) {
+      onPause?.();
+      return;
     }
 
-    if (currentTime >= lineEnd + 1) {
-      timedOutRef.current = true;
-      onPause?.();
+    // Give the learner one extra second to finish the line after its timestamp.
+    // Once it is complete, the next round still advances at the song's timestamp.
+    if (!isRoundComplete && nextLineStart !== undefined && currentTime >= nextLineStart) return;
+
+    if (nextLineStart !== undefined && currentTime >= nextLineStart) {
+      let timePosition = position + 1;
+      while (timePosition + 1 < playable.length && currentTime >= playable[timePosition + 1].line.start) {
+        timePosition += 1;
+      }
+      startRound(timePosition);
+      return;
     }
-  }, [active, currentTime, currentLine, isRoundComplete, onCancelFadeOut, onFadeOut, onPause, phase]);
+
+    if (isLastLine && currentTime >= lineEnd) {
+      onPause?.();
+      setPhase("finished");
+    }
+  }, [active, currentTime, currentLine, isRoundComplete, onPause, phase, playable, position]);
 
   // ---------- Round controls ----------
 
@@ -219,7 +232,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
   function startGame() {
     if (playable.length === 0) return;
-    timedOutRef.current = false;
     dispatch({ type: "reset" });
     startRound(0);
     setPhase("playing");
@@ -232,7 +244,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
     if (phase === "playing" && round) {
       handledStartRequestRef.current = startRequest;
-      timedOutRef.current = false;
       onPlayLine?.(currentLine?.start ?? playable[position].line.start);
       return;
     }
@@ -250,7 +261,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
     handledStartRequestRef.current = startRequest;
     queueMicrotask(() => {
-      timedOutRef.current = false;
       dispatch({ type: "reset" });
       startRound(startPosition);
       setPhase("playing");
@@ -258,29 +268,22 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
     });
   }, [active, currentLine, currentTime, hasPlaybackStarted, onPlayLine, phase, playable, position, round, startRequest]);
 
-  function goNext() {
-    const shouldReplayNext = timedOutRef.current;
-    timedOutRef.current = false;
-    if (position + 1 >= playable.length) {
-      setPhase("finished");
-      return;
-    }
-
-    const nextPosition = position + 1;
-    startRound(nextPosition);
-    const nextLine = playable[nextPosition]?.line;
-    if (shouldReplayNext && nextLine) onPlayLine?.(nextLine.start);
+  function goPrevious() {
+    if (position <= 0) return;
+    const previousPosition = position - 1;
+    const previousLine = playable[previousPosition]?.line;
+    if (!previousLine) return;
+    startRound(previousPosition);
+    onPlayLine?.(previousLine.start);
   }
   function replayCurrentLine() {
     if (!currentLine || !onPlayLine) return;
-    timedOutRef.current = false;
     onPlayLine(currentLine.start);
   }
 
   function quitToSetup() {
     setRound(null);
     setPosition(0);
-    timedOutRef.current = false;
     setPhase("setup");
     onQuit();
   }
@@ -289,7 +292,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
   function registerCorrect(tokenId: number, bankItemId?: string) {
     dispatch({ type: "correct" });
-    const completesRound = round !== null && round.filledIds.length + 1 === round.tokens.filter((token) => token.hidden).length;
     setRound((prev) =>
       prev
         ? {
@@ -301,10 +303,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
           }
         : prev,
     );
-    if (completesRound) {
-      window.setTimeout(goNext, 500);
-    }
-
   }
 
   function registerWrong() {
@@ -351,6 +349,12 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
         return; // Typing into a field does not count as a game answer.
       }
       if (event.key === "ArrowLeft") {
+        if (!currentLine || !onPlayLine || position === 0) return;
+        event.preventDefault();
+        goPrevious();
+        return;
+      }
+      if (event.key === "ArrowDown") {
         if (!currentLine || !onPlayLine) return;
         event.preventDefault();
         replayCurrentLine();
@@ -365,7 +369,7 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentLine, isGamePlaying, onPlayLine, settings.mode]);
+  }, [currentLine, isGamePlaying, onPlayLine, position, settings.mode]);
 
   // ---------- Shake animation for incorrect answers ----------
   // Use the Web Animations API instead of CSS keyframes.
@@ -405,12 +409,12 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
                   type="button"
                   aria-pressed={selected}
                   onClick={() => onDifficultyChange(difficulty)}
-                  className={`flex flex-col items-start gap-0.5 rounded border p-3 text-left transition ${
-                    selected ? "border-border bg-primary/10 font-semibold shadow-sm" : "hover:bg-muted/60"
+                  className={`flex min-h-20 flex-col items-start justify-center gap-1 rounded border p-3 text-left transition-all duration-200 ${
+                    selected ? "scale-[1.02] border-primary bg-primary font-bold text-primary-foreground shadow-lg ring-2 ring-primary/50" : "border-border bg-card text-muted-foreground hover:border-primary/60 hover:bg-muted"
                   }`}
                 >
                   <span className="font-medium">{t(`game.difficulty.${difficulty}`)}</span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className={`text-sm ${selected ? "text-primary-foreground/85" : "text-muted-foreground"}`}>
                     {t(`game.difficulty.${difficulty}.desc`)}
                   </span>
                 </button>
@@ -479,10 +483,16 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
         multiplier={game.multiplier}
       />
 
-      <div className={`grid w-full gap-2 ${settings.mode === "first-letter" ? "grid-cols-4" : "grid-cols-3"}`}>
+      <div className={`grid w-full gap-2 ${settings.mode === "first-letter" ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-4"}`}>
+        {onPlayLine && (
+          <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={position === 0} onClick={goPrevious}>
+            <ArrowLeft className="size-4" />
+            {t("game.previous")}
+          </Button>
+        )}
         {onPlayLine && (
           <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" onClick={replayCurrentLine}>
-            <ArrowLeft className="size-4" />
+            <ArrowDown className="size-4" />
             {t("game.replay")}
           </Button>
         )}
@@ -555,10 +565,9 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
       <div className="sticky bottom-3 z-10 space-y-2">
         {explanationStatus === "loading" && <ExplanationSkeleton />}
         {explanationStatus === "error" && <p role="alert" className="text-sm text-destructive">{explanationError}</p>}
-        {explanationStatus === "open" && cachedExplanation && currentLine && (
+        {explanationStatus === "open" && remoteExplanation && currentLine && (
           <ExplanationCard
-            data={cachedExplanation}
-            actions={<SaveToVocabularyButton original={currentLine.text} explanation={cachedExplanation} songTitle={songTitle} />}
+            data={remoteExplanation}
           />
         )}
         {settings.mode === "fill-blanks" ? (

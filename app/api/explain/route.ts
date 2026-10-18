@@ -11,6 +11,7 @@ import { mockExplanation } from "@/lib/mock/explanations";
 import { isExplanation } from "@/lib/types";
 import { LANGUAGES, isLanguage, type Language } from "@/types/game";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -180,17 +181,22 @@ export async function POST(request: Request) {
   }
 
   async function cacheExplanation(explanation: unknown) {
-    if (!supabase || !mayWriteSharedCache || !isExplanation(explanation)) return;
+    if (!isExplanation(explanation)) return;
+    // Shared AI results are public cache data. Prefer the server-only service client
+    // so a successful response is cached for guests too; fall back to an authenticated
+    // user's RLS-authorized client when the service key is not configured.
+    const cacheClient = createSupabaseAdminClient() ?? (mayWriteSharedCache ? supabase : null);
+    if (!cacheClient) return;
     try {
       if (catalogSongId && lineIndex !== null) {
-        const { error } = await supabase.from("line_explanations").upsert({
+        const { error } = await cacheClient.from("line_explanations").upsert({
           song_id: catalogSongId, line_index: lineIndex, line_text: text, source_language: sourceLanguage,
           target_language: targetLanguage, context, explanation_json: explanation,
         }, { onConflict: "song_id,line_index,source_language,target_language" });
         if (error) logSupabaseError("song_explanation_cache_write", error);
         return;
       }
-      const { error } = await supabase.from("line_explanations").upsert(
+      const { error } = await cacheClient.from("line_explanations").upsert(
         {
           line_text: text,
           source_language: sourceLanguage,

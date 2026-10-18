@@ -137,5 +137,5 @@ const GENERIC: Record<Language, (text: string) => Explanation> = {
 
 export function mockExplanation(text: string, target: Language): Explanation {
   const known = MOCK[text.trim()];
-  return known?.[target] ?? known?.en ?? GENERIC[target](text.trim());
+  return known?.[target] ?? GENERIC[target](text.trim());
 }
