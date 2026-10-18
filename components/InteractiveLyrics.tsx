@@ -9,6 +9,7 @@ import SaveToVocabularyButton from "@/components/SaveToVocabularyButton";
 import { useLanguage } from "@/context/LanguageContext";
 import { capEntries, usePersistentState } from "@/lib/storage/usePersistentState";
 import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
+import { useAuthState } from "@/context/AuthContext";
 
 type Props = {
   lines: LyricLine[];
@@ -20,6 +21,8 @@ type Props = {
   onExplainStart?: () => void;
   /** Optional video title saved with a vocabulary item. */
   songTitle?: string | null;
+  /** The current song ID lets the server use its Supabase explanation cache. */
+  youtubeId?: string;
 };
 
 // Explanation panel state for one lyric line.
@@ -27,7 +30,7 @@ type Props = {
 type LineState =
   | { kind: "loading" } // Waiting for a response; show the skeleton.
   | { kind: "error"; message: string }
-  | { kind: "open" }; // The card is expanded.
+  | { kind: "open"; explanation?: Explanation }; // The card is expanded.
 
 // Cache key includes normalized line text and language pair, so language variants stay separate.
 // Maximum number of explanations stored in localStorage.
@@ -55,6 +58,7 @@ export default function InteractiveLyrics({
   onSeek,
   onExplainStart,
   songTitle = null,
+  youtubeId,
 }: Props) {
   // 1. Cache maps lyric text to its explanation and persists across videos and page reloads.
   const [explanationCache, setExplanationCache] = usePersistentState<Record<string, Explanation>>(
@@ -66,9 +70,10 @@ export default function InteractiveLyrics({
   // 2. Explanation panel state for each line (loading, error, or open).
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
 
-  // Use the selected languages in AI requests and cache keys.
-  const { t, sourceLanguage, targetLanguage } = useLanguage();
-  const langKey = `${sourceLanguage}>${targetLanguage}`;
+  // The target language controls AI explanations and their client cache.
+  const { t, targetLanguage } = useLanguage();
+  const { userId } = useAuthState();
+  const langKey = targetLanguage;
 
   // Active line is the one whose [start, start + duration) interval contains currentTime.
   const activeIndex = useMemo(
@@ -110,7 +115,7 @@ export default function InteractiveLyrics({
     onExplainStart?.();
 
     // Reuse a cached explanation without making another request.
-    if (explanationCache[key]) {
+    if (!userId && !youtubeId && explanationCache[key]) {
       setLineState(id, { kind: "open" });
       return;
     }
@@ -124,8 +129,9 @@ export default function InteractiveLyrics({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: line.text,
+          youtubeId,
+          lineIndex: index,
           context: lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" "),
-          sourceLanguage,
           targetLanguage,
         }),
       });
@@ -141,12 +147,13 @@ export default function InteractiveLyrics({
       if (!response.ok) {
         throw new Error(t("explain.requestError"));
       }
+      if (!isExplanation(json)) throw new Error(t("explain.requestError"));
 
       // Cache the response and expand the card.
-      setExplanationCache((prev) =>
+      if (!userId) setExplanationCache((prev) =>
         capEntries({ ...prev, [key]: json as unknown as Explanation }, MAX_CACHED_EXPLANATIONS),
       );
-      setLineState(id, { kind: "open" });
+      setLineState(id, { kind: "open", explanation: json as unknown as Explanation });
     } catch (error) {
       const message = error instanceof Error ? error.message : t("explain.unknownError");
       setLineState(id, { kind: "error", message });
@@ -167,7 +174,8 @@ export default function InteractiveLyrics({
             currentTime < line.start + line.duration + 1
           );
           const state = lineStates[id];
-          const cached = explanationCache[cacheKey(line.text, langKey)];
+          const cached = userId ? undefined : explanationCache[cacheKey(line.text, langKey)];
+          const explanation = state?.kind === "open" ? state.explanation ?? cached : undefined;
           const elapsed = Math.max(0, Math.min(currentTime - line.start, line.duration));
           const progress = isCurrent && line.duration > 0
             ? Math.round((elapsed / line.duration) * 100)
@@ -234,14 +242,14 @@ export default function InteractiveLyrics({
                 </p>
               )}
 
-              {state?.kind === "open" && cached && (
+              {state?.kind === "open" && explanation && (
                 <ExplanationCard
-                  data={cached}
+                  data={explanation}
                   // Show the save-to-vocabulary action inside the explanation card.
                   actions={
                     <SaveToVocabularyButton
                       original={line.text}
-                      explanation={cached}
+                      explanation={explanation}
                       songTitle={songTitle}
                     />
                   }

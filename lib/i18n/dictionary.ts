@@ -127,6 +127,15 @@ const ru = {
   "vocab.noResults": "Ничего не найдено.",
   "vocab.localNote": "Словарь хранится только в этом браузере.",
   "vocab.error": "Не удалось сохранить: хранилище браузера недоступно или заполнено.",
+  "dashboard.player": "Видеоплеер",
+  "dashboard.reviewTiming": "Проверьте текст и паузы по видео. Нажмите на время строки, чтобы перейти к ней.",
+  "dashboard.loadTranscriptHint": "Загрузите субтитры, чтобы редактировать строки и тайминг.",
+  "dashboard.seekToLine": "Перейти к строке",
+  "dashboard.start": "Начало",
+  "dashboard.lyrics": "Текст строки",
+  "dashboard.duration": "Длительность",
+  "dashboard.recalculateDurations": "Пересчитать длительность по следующей строке",
+  "dashboard.mergeShortLines": "Объединить короткие строки",
 } as const;
 
 export type TranslationKey = keyof typeof ru;
@@ -254,6 +263,15 @@ const en: Dictionary = {
   "vocab.noResults": "Nothing found.",
   "vocab.localNote": "Your vocabulary is stored only in this browser.",
   "vocab.error": "Couldn't save: browser storage is unavailable or full.",
+  "dashboard.player": "Video player",
+  "dashboard.reviewTiming": "Check the lyrics and pauses against the video. Select a line time to jump to it.",
+  "dashboard.loadTranscriptHint": "Load subtitles to edit the lines and timing.",
+  "dashboard.seekToLine": "Play from line",
+  "dashboard.start": "Start time",
+  "dashboard.lyrics": "Lyric line",
+  "dashboard.duration": "Duration",
+  "dashboard.recalculateDurations": "Recalculate durations from the next line",
+  "dashboard.mergeShortLines": "Merge short lines",
 };
 
 const pl: Dictionary = {
@@ -378,6 +396,15 @@ const pl: Dictionary = {
   "vocab.noResults": "Nic nie znaleziono.",
   "vocab.localNote": "Słownik jest zapisany tylko w tej przeglądarce.",
   "vocab.error": "Nie udało się zapisać: pamięć przeglądarki jest niedostępna lub pełna.",
+  "dashboard.player": "Odtwarzacz wideo",
+  "dashboard.reviewTiming": "Sprawdź tekst i pauzy z nagraniem. Kliknij czas wersu, aby do niego przejść.",
+  "dashboard.loadTranscriptHint": "Załaduj napisy, aby edytować wersy i ich czas.",
+  "dashboard.seekToLine": "Odtwórz od tego wersu",
+  "dashboard.start": "Czas początku",
+  "dashboard.lyrics": "Wers tekstu",
+  "dashboard.duration": "Czas trwania",
+  "dashboard.recalculateDurations": "Przelicz czas na podstawie następnego wersu",
+  "dashboard.mergeShortLines": "Połącz krótkie wersy",
 };
 
 const es: Dictionary = {
@@ -502,6 +529,15 @@ const es: Dictionary = {
   "vocab.noResults": "No se encontró nada.",
   "vocab.localNote": "Tu vocabulario se guarda solo en este navegador.",
   "vocab.error": "No se pudo guardar: el almacenamiento del navegador no está disponible o está lleno.",
+  "dashboard.player": "Reproductor de vídeo",
+  "dashboard.reviewTiming": "Comprueba la letra y las pausas con el vídeo. Pulsa el tiempo de una línea para ir a ella.",
+  "dashboard.loadTranscriptHint": "Carga los subtítulos para editar las líneas y los tiempos.",
+  "dashboard.seekToLine": "Reproducir desde esta línea",
+  "dashboard.start": "Tiempo de inicio",
+  "dashboard.lyrics": "Línea de la letra",
+  "dashboard.duration": "Duración",
+  "dashboard.recalculateDurations": "Recalcular la duración según la siguiente línea",
+  "dashboard.mergeShortLines": "Unir líneas cortas",
 };
 
 export const DICTIONARY: Record<Language, Dictionary> = { ru, en, pl, es };

@@ -18,8 +18,15 @@ export function isValidVideoId(value: string): boolean {
   return VIDEO_ID_PATTERN.test(value);
 }
 
-export function extractVideoId(input: string): string | null {
+/** Removes playlist, radio, and tracking parameters after the first ampersand. */
+export function stripYoutubeUrlExtras(input: string): string {
   const value = input.trim();
+  const firstAmpersand = value.indexOf("&");
+  return firstAmpersand === -1 ? value : value.slice(0, firstAmpersand).trim();
+}
+
+export function extractVideoId(input: string): string | null {
+  const value = stripYoutubeUrlExtras(input);
   if (!value) return null;
 
   // 1. The user entered a videoId directly.

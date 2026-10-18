@@ -32,32 +32,68 @@ export async function GET(request: Request) {
   const lang = params.get("lang") ?? "en";
 
   if (!videoId || !isValidVideoId(videoId)) {
-    return NextResponse.json({ error: "Некорректный videoId." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid video ID." }, { status: 400 });
   }
   if (!isLanguage(lang)) {
-    return NextResponse.json({ error: "Неподдерживаемый язык песни." }, { status: 400 });
+    return NextResponse.json({ error: "Unsupported song language." }, { status: 400 });
   }
 
   try {
     let supabase: Awaited<ReturnType<typeof createSupabaseServerClient>> = null;
-    try { supabase = await createSupabaseServerClient(); } catch { /* Fall through to YouTube. */ }
+    try { supabase = await createSupabaseServerClient(); } catch (error) {
+      console.error("[transcript] Supabase client initialization failed", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        return NextResponse.json({ error: "Could not access the saved transcript database." }, { status: 503 });
+      }
+    }
     if (supabase) {
-      try {
-        const { data } = await supabase
+      const { data: song, error: songError } = await supabase
+        .from("songs")
+        .select("id,language")
+        .eq("youtube_id", videoId)
+        .maybeSingle();
+      if (songError) {
+        logTranscriptDatabaseError("song_lookup", songError);
+        return NextResponse.json({ error: "Could not check the saved song transcript." }, { status: 503 });
+      }
+
+      if (song) {
+        const { data: saved, error: transcriptError } = await supabase
           .from("transcripts")
           .select("lines_json")
-          .eq("video_id", videoId)
-          .eq("language", lang)
-          .eq("verified", true)
+          .eq("song_id", song.id)
           .maybeSingle();
-        if (data && Array.isArray(data.lines_json)) return NextResponse.json(data.lines_json);
-      } catch { /* Cache miss or database unavailable: retrieve from YouTube. */ }
+        if (transcriptError) {
+          logTranscriptDatabaseError("song_transcript_lookup", transcriptError);
+          return NextResponse.json({ error: "Could not load the saved song transcript." }, { status: 503 });
+        }
+        if (saved && Array.isArray(saved.lines_json)) return NextResponse.json(saved.lines_json);
+      }
+
+      // Prefer the shared database cache for both saved and uncatalogued videos.
+      const { data: cached, error: cacheError } = await supabase
+        .from("transcripts")
+        .select("lines_json")
+        .eq("video_id", videoId)
+        .eq("language", song?.language ?? lang)
+        .eq("verified", true)
+        .maybeSingle();
+      if (cacheError) {
+        logTranscriptDatabaseError("verified_transcript_lookup", cacheError);
+        if (song) return NextResponse.json({ error: "Could not load the saved song transcript." }, { status: 503 });
+      }
+      if (cached && Array.isArray(cached.lines_json)) return NextResponse.json(cached.lines_json);
+
+      // Do not silently replace a catalog song's missing transcript with a YouTube fetch.
+      if (song) return NextResponse.json({ error: "The saved song has no transcript in the database." }, { status: 404 });
     }
 
     const items = await YoutubeTranscript.fetchTranscript(videoId, { lang });
 
     if (items.length === 0) {
-      return NextResponse.json({ error: "В этом видео нет субтитров." }, { status: 404 });
+      return NextResponse.json({ error: "No subtitles are available for this video." }, { status: 404 });
     }
 
     // Depending on the library version, timestamps may be in seconds or milliseconds.
@@ -76,7 +112,7 @@ export async function GET(request: Request) {
     const lines = cleanTranscript(rawLines);
 
     if (lines.length === 0) {
-      return NextResponse.json({ error: "После очистки субтитров не осталось текста." }, { status: 404 });
+      return NextResponse.json({ error: "No text remained after cleaning the subtitles." }, { status: 404 });
     }
 
     return NextResponse.json(lines);
@@ -85,7 +121,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Не удалось получить субтитры. Возможно, в видео нет субтитров на выбранном языке или они отключены.",
+          "Could not retrieve subtitles. The video may not have subtitles in the selected language, or subtitles may be disabled.",
       },
       { status: 404 },
     );

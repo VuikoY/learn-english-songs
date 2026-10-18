@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Link2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/context/LanguageContext";
-import { extractVideoId } from "@/lib/youtube";
+import { extractVideoId, stripYoutubeUrlExtras } from "@/lib/youtube";
 
 type Props = {
   /** Called with a valid videoId when the user submits the form. */
@@ -51,7 +51,7 @@ export default function VideoUrlForm({ onSubmit, isLoading = false, error = null
             type="text"
             value={value}
             onChange={(e) => {
-              setValue(e.target.value);
+              setValue(stripYoutubeUrlExtras(e.target.value));
               setInvalid(false); // Clear the previous error as the user edits.
             }}
             placeholder={t("form.placeholder")}

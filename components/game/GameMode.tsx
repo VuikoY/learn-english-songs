@@ -20,6 +20,7 @@ import LetterKeyboard from "@/components/game/LetterKeyboard";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
 import SaveToVocabularyButton from "@/components/SaveToVocabularyButton";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAuthState } from "@/context/AuthContext";
 import {
   ALPHABETS,
   buildRound,
@@ -44,6 +45,7 @@ import {
 type Props = {
   lines: LyricLine[];
   currentTime: number;
+  youtubeId?: string;
   /** Seeks to a song line and starts playback. */
   onPlayLine?: (startSeconds: number) => void;
   onPause?: () => void;
@@ -62,8 +64,9 @@ type Props = {
 // Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
 
-export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFadeOut, onCancelFadeOut, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, onPause, onFadeOut, onCancelFadeOut, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const { userId } = useAuthState();
   const [explanationCache, setExplanationCache] = usePersistentState<Record<string, Explanation>>(
     "lingo-clips:explanations",
     {},
@@ -71,6 +74,7 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
   );
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
   const [explanationError, setExplanationError] = useState("");
+  const [remoteExplanation, setRemoteExplanation] = useState<Explanation | null>(null);
 
   // ---------- State ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
@@ -124,14 +128,16 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
     timedOutRef.current = false;
   }, [phase, settings.mode, settings.difficulty, lines, wordPool]);
   const explainKey = currentLine ? `${sourceLanguage}>${targetLanguage}::${currentLine.text.trim().toLowerCase()}` : "";
-  const cachedExplanation = explainKey ? explanationCache[explainKey] : undefined;
-  const explanationLineRef = useRef(explainKey);
+  const cachedExplanation = remoteExplanation ?? (youtubeId || userId ? undefined : explainKey ? explanationCache[explainKey] : undefined);
+  const explanationLineKey = `${youtubeId ?? ""}:${round?.lineIndex ?? ""}:${explainKey}`;
+  const explanationLineRef = useRef(explanationLineKey);
   useEffect(() => {
-    if (explanationLineRef.current === explainKey) return;
-    explanationLineRef.current = explainKey;
+    if (explanationLineRef.current === explanationLineKey) return;
+    explanationLineRef.current = explanationLineKey;
     setExplanationStatus("closed");
     setExplanationError("");
-  }, [explainKey]);
+    setRemoteExplanation(null);
+  }, [explanationLineKey]);
 
   async function toggleExplanation() {
     if (!currentLine || !explainKey) return;
@@ -152,6 +158,8 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: currentLine.text,
+          youtubeId,
+          lineIndex: round!.lineIndex,
           context: lines.slice(Math.max(0, round!.lineIndex - 1), round!.lineIndex + 2).filter((_, index) => index !== round!.lineIndex - Math.max(0, round!.lineIndex - 1)).map((line) => line.text).join(" "),
           sourceLanguage,
           targetLanguage,
@@ -162,7 +170,8 @@ export default function GameMode({ lines, currentTime, onPlayLine, onPause, onFa
       try { result = JSON.parse(raw); } catch { throw new Error(`Server returned invalid JSON (${response.status}).`); }
       if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not get an explanation.");
       if (!isExplanation(result)) throw new Error("The explanation response has an invalid format.");
-      setExplanationCache((previous) => capEntries({ ...previous, [explainKey]: result }, 500));
+      setRemoteExplanation(result);
+      if (!youtubeId && !userId) setExplanationCache((previous) => capEntries({ ...previous, [explainKey]: result }, 500));
       setExplanationStatus("open");
     } catch (error) {
       setExplanationError(error instanceof Error ? error.message : "Unknown error");

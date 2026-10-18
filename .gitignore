@@ -35,6 +35,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Supabase CLI generated local state may contain local service keys.
+/supabase/.temp/
+
 # vercel
 .vercel
 

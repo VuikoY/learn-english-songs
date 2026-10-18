@@ -1,0 +1,3 @@
+-- Legacy schema snapshot retained as a pointer for older project notes.
+-- Catalog, transcript, explanation cache, and favorite changes are managed by
+-- ./migrations/20261018130000_schema_v2_catalog_and_favorites.sql.

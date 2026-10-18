@@ -84,34 +84,40 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Некорректный JSON." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
   }
 
-  const input = (body ?? {}) as { text?: unknown; sourceLanguage?: unknown; targetLanguage?: unknown; context?: unknown };
+  const input = (body ?? {}) as { text?: unknown; sourceLanguage?: unknown; targetLanguage?: unknown; context?: unknown; youtubeId?: unknown; lineIndex?: unknown };
   const text = typeof input.text === "string" ? input.text.trim() : "";
   const context = typeof input.context === "string" ? input.context.trim().slice(0, 500) : "";
 
   if (!text) {
-    return NextResponse.json({ error: "Поле text не должно быть пустым." }, { status: 400 });
+    return NextResponse.json({ error: "The text field cannot be empty." }, { status: 400 });
   }
   if (text.length > MAX_TEXT_LENGTH) {
     return NextResponse.json(
-      { error: `Строка слишком длинная (максимум ${MAX_TEXT_LENGTH} символов).` },
+      { error: `The line is too long (maximum ${MAX_TEXT_LENGTH} characters).` },
       { status: 400 },
     );
   }
 
-  const sourceLanguage = input.sourceLanguage ?? "en";
-  const targetLanguage = input.targetLanguage ?? "ru";
-  if (!isLanguage(sourceLanguage) || !isLanguage(targetLanguage)) {
-    return NextResponse.json({ error: "Неподдерживаемый язык." }, { status: 400 });
+  if ((input.sourceLanguage !== undefined && !isLanguage(input.sourceLanguage)) ||
+    (input.targetLanguage !== undefined && !isLanguage(input.targetLanguage))) {
+    return NextResponse.json({ error: "Unsupported language." }, { status: 400 });
   }
+  let sourceLanguage: Language = input.sourceLanguage === undefined ? "en" : input.sourceLanguage as Language;
+  const targetLanguage: Language = input.targetLanguage === undefined ? "ru" : input.targetLanguage as Language;
+  const youtubeId = typeof input.youtubeId === "string" && /^[\w-]{11}$/.test(input.youtubeId) ? input.youtubeId : null;
+  const lineIndex = Number.isInteger(input.lineIndex) && (input.lineIndex as number) >= 0 ? input.lineIndex as number : null;
 
   let supabase: Awaited<ReturnType<typeof createSupabaseServerClient>> = null;
   try { supabase = await createSupabaseServerClient(); } catch (error) {
     console.error("[explain] Supabase client initialization failed", {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      return NextResponse.json({ error: "Could not access the explanation cache." }, { status: 503 });
+    }
   }
   let mayWriteSharedCache = false;
   if (supabase) {
@@ -125,8 +131,33 @@ export async function POST(request: Request) {
       });
     }
   }
+  let catalogSongId: string | null = null;
+  if (supabase && youtubeId) {
+    try {
+      const { data: song, error } = await supabase.from("songs").select("id,language").eq("youtube_id", youtubeId).maybeSingle();
+      if (error) {
+        logSupabaseError("song_lookup", error);
+        return NextResponse.json({ error: "Could not check the saved song explanation." }, { status: 503 });
+      }
+      if (song) {
+        catalogSongId = song.id;
+        if (isLanguage(song.language)) sourceLanguage = song.language;
+      }
+    } catch (error) {
+      console.error("[explain] Song lookup threw", { errorType: error instanceof Error ? error.name : "UnknownError" });
+      return NextResponse.json({ error: "Could not check the saved song explanation." }, { status: 503 });
+    }
+  }
   if (supabase) {
     try {
+      if (catalogSongId && lineIndex !== null) {
+        const { data, error } = await supabase.from("line_explanations").select("explanation_json").eq("song_id", catalogSongId).eq("line_index", lineIndex).eq("source_language", sourceLanguage).eq("target_language", targetLanguage).maybeSingle();
+        if (error) {
+          logSupabaseError("song_explanation_cache_lookup", error);
+          return NextResponse.json({ error: "Could not read the saved song explanation." }, { status: 503 });
+        }
+        if (data && isExplanation(data.explanation_json)) return NextResponse.json(data.explanation_json);
+      }
       const { data, error } = await supabase
         .from("line_explanations")
         .select("explanation_json")
@@ -135,18 +166,30 @@ export async function POST(request: Request) {
         .eq("target_language", targetLanguage)
         .eq("context", context)
         .maybeSingle();
-      if (error) logSupabaseError("explanation_cache_lookup", error);
+      if (error) {
+        logSupabaseError("explanation_cache_lookup", error);
+        if (catalogSongId) return NextResponse.json({ error: "Could not read the saved song explanation." }, { status: 503 });
+      }
       if (data && isExplanation(data.explanation_json)) return NextResponse.json(data.explanation_json);
     } catch (error) {
       console.error("[explain] Supabase cache lookup threw", {
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
+      if (catalogSongId) return NextResponse.json({ error: "Could not read the saved song explanation." }, { status: 503 });
     }
   }
 
   async function cacheExplanation(explanation: unknown) {
     if (!supabase || !mayWriteSharedCache || !isExplanation(explanation)) return;
     try {
+      if (catalogSongId && lineIndex !== null) {
+        const { error } = await supabase.from("line_explanations").upsert({
+          song_id: catalogSongId, line_index: lineIndex, line_text: text, source_language: sourceLanguage,
+          target_language: targetLanguage, context, explanation_json: explanation,
+        }, { onConflict: "song_id,line_index,source_language,target_language" });
+        if (error) logSupabaseError("song_explanation_cache_write", error);
+        return;
+      }
       const { error } = await supabase.from("line_explanations").upsert(
         {
           line_text: text,
@@ -169,6 +212,7 @@ export async function POST(request: Request) {
   if (process.env.MOCK_AI === "true") {
     await delay(700); // Simulate network latency so the loading skeleton is visible.
     const explanation = mockExplanation(text, targetLanguage);
+    await cacheExplanation(explanation);
     return NextResponse.json(explanation);
   }
 
@@ -177,7 +221,7 @@ export async function POST(request: Request) {
   if (!apiKey || /^(your|replace|example|placeholder|gemini_api_key|api[_ -]?key)/i.test(apiKey)) {
     logGeminiFailure({ category: apiKey ? "placeholder_api_key" : "missing_api_key" });
     return NextResponse.json(
-      { error: "GEMINI_API_KEY отсутствует в .env.local или содержит шаблон. Укажи действительный ключ и перезапусти dev-сервер." },
+      { error: "GEMINI_API_KEY is missing from .env.local or still contains a placeholder. Set a valid key and restart the dev server." },
       { status: 500 },
     );
   }
@@ -211,8 +255,8 @@ export async function POST(request: Request) {
       const category = geminiFailureCategory(geminiResponse.status, providerStatus);
       logGeminiFailure({ category, httpStatus: geminiResponse.status, providerCode, providerStatus });
       const error = geminiResponse.status === 400 || geminiResponse.status === 403
-        ? "Gemini отклонил API-ключ или доступ к модели. Проверь ключ и его разрешения в Google AI Studio."
-        : "Сервис ИИ временно недоступен. Попробуй ещё раз.";
+        ? "Gemini rejected the API key or model access. Check the key and its permissions in Google AI Studio."
+        : "The AI service is temporarily unavailable. Please try again.";
       return NextResponse.json(
         { error },
         { status: 502 },
@@ -229,10 +273,10 @@ export async function POST(request: Request) {
         finishReason: safeProviderStatus(finishReason),
       });
     }
-    if (!rawJson) throw new Error("Модель вернула пустой ответ.");
+    if (!rawJson) throw new Error("The model returned an empty response.");
 
     const parsed: unknown = JSON.parse(rawJson);
-    if (!isExplanation(parsed)) throw new Error("Модель вернула ответ в неожиданном формате.");
+    if (!isExplanation(parsed)) throw new Error("The model returned a response in an unexpected format.");
 
     await cacheExplanation(parsed);
     return NextResponse.json(parsed);
@@ -245,6 +289,6 @@ export async function POST(request: Request) {
           : "response_processing_error",
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
-    return NextResponse.json({ error: "Не удалось обработать ответ ИИ." }, { status: 500 });
+    return NextResponse.json({ error: "Could not process the AI response." }, { status: 500 });
   }
 }
