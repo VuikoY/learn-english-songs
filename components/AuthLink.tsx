@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { ChevronDown, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -42,9 +42,8 @@ export default function AuthLink() {
   }
 
   return <details ref={menuRef} className="relative">
-    <summary aria-label={text.userMenu} className="flex size-9 cursor-pointer list-none items-center justify-center gap-1 rounded-full border hover:bg-muted [&::-webkit-details-marker]:hidden">
+    <summary aria-label={text.userMenu} className="flex size-9 cursor-pointer list-none items-center justify-center rounded-full border hover:bg-muted [&::-webkit-details-marker]:hidden">
       <UserRound className="size-4" aria-hidden="true" />
-      <ChevronDown className="size-3" aria-hidden="true" />
     </summary>
     <div className="absolute right-0 z-50 mt-2 w-52 rounded-xl border bg-background p-1.5 shadow-lg">
       <Link href="/auth/reset-password" onClick={() => menuRef.current?.removeAttribute("open")} className="block rounded-md px-3 py-2 text-sm hover:bg-muted">{text.changePassword}</Link>

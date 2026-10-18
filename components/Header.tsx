@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
-import VocabularyNavLink from "@/components/VocabularyNavLink";
+import FavoritesNavLink from "@/components/FavoritesNavLink";
 import AuthLink from "@/components/AuthLink";
 
 export default function Header() {
@@ -16,7 +16,7 @@ export default function Header() {
 
         <nav className="flex items-center gap-2">
           <LanguageSwitcher />
-          <VocabularyNavLink />
+          <FavoritesNavLink />
           <AuthLink />
         </nav>
       </div>

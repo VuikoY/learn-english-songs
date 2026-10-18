@@ -72,7 +72,7 @@ export default function LanguageSwitcher() {
     // The native details element provides disclosure behavior without JavaScript.
     <details ref={menuRef} className="relative">
       <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-sm hover:bg-muted [&::-webkit-details-marker]:hidden">
-        <Globe className="size-4" aria-hidden />
+        <Globe className="size-4" aria-hidden suppressHydrationWarning />
         <span>
           {LANGUAGES[sourceLanguage].label} → {LANGUAGES[targetLanguage].label}
         </span>

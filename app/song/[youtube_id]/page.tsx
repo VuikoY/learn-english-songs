@@ -219,11 +219,12 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl py-8">
-      <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t("app.title")}</h1>
-      <p className="mb-6 text-muted-foreground">{t("app.subtitle")}</p>
-
-      <VideoUrlForm onSubmit={handleLoad} isLoading={isLoading} error={error} />
-      {lines.length > 0 && <div className="mx-auto mt-2 flex w-full items-center gap-3 lg:w-[65%]">
+      {view !== "play" && <>
+        <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t("app.title")}</h1>
+        <p className="mb-6 text-muted-foreground">{t("app.subtitle")}</p>
+        <VideoUrlForm onSubmit={handleLoad} isLoading={isLoading} error={error} />
+      </>}
+      {view !== "play" && lines.length > 0 && <div className="mx-auto mt-2 flex w-full items-center gap-3 lg:w-[65%]">
         <button type="button" disabled={transcriptSaved} onClick={async () => {
           const response = await fetch("/api/transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId, language: sourceLanguage, lines }) });
           setTranscriptMessage(response.ok ? t("transcript.saved") : t("transcript.saveError"));

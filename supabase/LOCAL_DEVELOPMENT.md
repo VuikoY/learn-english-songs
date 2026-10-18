@@ -2,6 +2,13 @@
 
 The database schema is managed by files in `supabase/migrations`. Do not apply the legacy `schema.sql` snapshots to a database.
 
+After adding a migration while the local stack is already running, apply pending migrations without resetting local data:
+
+```sh
+npx supabase migration up --local
+npm run db:types
+```
+
 ## Prerequisites
 
 - Install and start Docker Desktop.

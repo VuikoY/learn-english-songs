@@ -1,20 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Heart } from "lucide-react";
+import { Heart, Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 
 const GUEST_FAVORITES_KEY = "lingo-clips:favorites:v1";
 const FAVORITES_CHANGED = "lingo-clips:favorites-changed";
-const labels = {
-  ru: { add: "Добавить в избранное", added: "В избранном" },
-  en: { add: "Add to favorites", added: "In favorites" },
-  pl: { add: "Dodaj do ulubionych", added: "W ulubionych" },
-  es: { add: "Añadir a favoritos", added: "En favoritos" },
-} as const;
-
 function readGuestFavorites(): string[] {
   try {
     const stored = localStorage.getItem(GUEST_FAVORITES_KEY);
@@ -28,9 +21,9 @@ function writeGuestFavorites(ids: string[]) {
   window.dispatchEvent(new Event(FAVORITES_CHANGED));
 }
 
-export default function FavoriteButton({ songId }: { songId: string }) {
+export default function FavoriteButton({ songId, compact = false }: { songId: string; compact?: boolean }) {
   const { userId, loading: authLoading } = useAuthState();
-  const { uiLanguage } = useLanguage();
+  const { t } = useLanguage();
   const [favorite, setFavorite] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -74,14 +67,19 @@ export default function FavoriteButton({ songId }: { songId: string }) {
       const result = favorite
         ? await db.from("user_favorites").delete().eq("user_id", userId).eq("song_id", songId)
         : await db.from("user_favorites").upsert({ user_id: userId, song_id: songId }, { onConflict: "user_id,song_id", ignoreDuplicates: true });
-      if (!result.error) setFavorite(!favorite);
+      if (!result.error) {
+        setFavorite(!favorite);
+        window.dispatchEvent(new Event(FAVORITES_CHANGED));
+      }
     } finally { setBusy(false); }
   }
 
-  const label = labels[uiLanguage];
+  const label = favorite ? t("favorites.remove") : t("favorites.add");
+  const visibleLabel = busy ? t("common.saving") : label;
   return <button type="button" disabled={busy || authLoading} onClick={toggle} aria-pressed={favorite}
-    aria-label={favorite ? label.added : label.add} title={favorite ? label.added : label.add}
-    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50">
-    <Heart className={`size-4 ${favorite ? "fill-rose-500 text-rose-500" : ""}`}/>{favorite ? label.added : label.add}
+    aria-label={visibleLabel} title={visibleLabel}
+    className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-md border disabled:opacity-50 ${compact ? "gap-1 px-2 py-1 text-xs" : "gap-2 px-3 py-2 text-sm"}`}>
+    {busy ? <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" /> : <Heart className={`size-4 shrink-0 ${favorite ? "fill-rose-500 text-rose-500" : ""}`} aria-hidden="true" />}
+    <span className={compact ? "hidden xl:inline" : undefined}>{visibleLabel}</span>
   </button>;
 }
