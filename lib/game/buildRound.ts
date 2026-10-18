@@ -82,6 +82,7 @@ export const ALPHABETS: Record<Language, string[]> = {
   es: LATIN, // ñ normalizes to n.
   pl: [...LATIN, "ł"], // ł does not normalize to l, so it has its own key.
   ru: "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".split(""),
+  uk: "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя".split(""),
 };
 
 // ---------------------------------------------------------------------------

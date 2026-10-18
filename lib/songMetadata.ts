@@ -23,6 +23,11 @@ const labels: Record<Language, { genre: string; difficulty: string; artist: stri
     genres: { pop: "Поп", rock: "Рок", "hip-hop": "Хип-хоп / рэп", "r-and-b": "R&B / соул", electronic: "Электронная / танцевальная", jazz: "Джаз", blues: "Блюз", "country-folk": "Кантри / фолк", "metal-punk": "Метал / панк", "indie-alternative": "Инди / альтернатива", "reggae-ska": "Регги / ска", latin: "Латинская", classical: "Классическая", soundtrack: "Саундтрек / мюзикл", gospel: "Госпел / религиозная", world: "Музыка народов мира", other: "Другое" },
     difficulties: { beginner: "Начальный", intermediate: "Средний", advanced: "Продвинутый" },
   },
+  uk: {
+    genre: "Жанр", difficulty: "Складність", artist: "Виконавець", all: "Усі", aiHint: "AI оцінює жанр за назвою й текстом пісні, а складність — за лексикою та структурою рядків. Перевірте й за потреби змініть.", analyzeError: "Не вдалося автоматично визначити жанр і складність. Оберіть їх вручну.",
+    genres: { pop: "Поп", rock: "Рок", "hip-hop": "Хіп-хоп / реп", "r-and-b": "R&B / соул", electronic: "Електронна / танцювальна", jazz: "Джаз", blues: "Блюз", "country-folk": "Кантрі / фолк", "metal-punk": "Метал / панк", "indie-alternative": "Інді / альтернатива", "reggae-ska": "Реггі / ска", latin: "Латинська", classical: "Класична", soundtrack: "Саундтрек / мюзикл", gospel: "Госпел / релігійна", world: "Музика світу", other: "Інше" },
+    difficulties: { beginner: "Початковий", intermediate: "Середній", advanced: "Просунутий" },
+  },
   en: {
     genre: "Genre", difficulty: "Difficulty", artist: "Artist", all: "All", aiHint: "AI estimates genre from the title and lyrics, and difficulty from vocabulary and line structure. Review and adjust if needed.", analyzeError: "Could not determine genre and difficulty automatically. Choose them manually.",
     genres: { pop: "Pop", rock: "Rock", "hip-hop": "Hip-hop / rap", "r-and-b": "R&B / soul", electronic: "Electronic / dance", jazz: "Jazz", blues: "Blues", "country-folk": "Country / folk", "metal-punk": "Metal / punk", "indie-alternative": "Indie / alternative", "reggae-ska": "Reggae / ska", latin: "Latin", classical: "Classical", soundtrack: "Soundtrack / musical", gospel: "Gospel / worship", world: "World music", other: "Other" },

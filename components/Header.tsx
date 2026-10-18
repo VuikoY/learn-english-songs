@@ -14,7 +14,7 @@ export default function Header() {
           LingoClips
         </Link>
 
-        <nav className="flex items-center gap-2">
+        <nav className="flex items-center gap-4">
           <LanguageSwitcher />
           <FavoritesNavLink />
           <AuthLink />

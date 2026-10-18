@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSongDifficulty, isSongGenre, SONG_DIFFICULTIES, SONG_GENRES } from "@/lib/songMetadata";
-import { isLanguage, LANGUAGES } from "@/types/game";
+import { isLearningLanguage, LANGUAGES } from "@/types/game";
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   if (!user || user.is_anonymous) return NextResponse.json({ error: "Sign in to analyze song metadata." }, { status: 401 });
 
   const input = await request.json().catch(() => null) as { title?: unknown; artist?: unknown; language?: unknown; lyrics?: unknown } | null;
-  if (!input || typeof input.title !== "string" || !isLanguage(input.language) || typeof input.lyrics !== "string") {
+  if (!input || typeof input.title !== "string" || !isLearningLanguage(input.language) || typeof input.lyrics !== "string") {
     return NextResponse.json({ error: "Song title, language, and lyrics are required." }, { status: 400 });
   }
   const apiKey = process.env.GEMINI_API_KEY?.trim();

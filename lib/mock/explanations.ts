@@ -113,6 +113,11 @@ const GENERIC: Record<Language, (text: string) => Explanation> = {
     grammar: "Демо-режим (MOCK_AI=true): настоящее объяснение грамматики появится после отключения заглушки.",
     slang: "",
   }),
+  uk: (text) => ({
+    translation: `[Демо] Тут з’явиться переклад рядка: «${text}»`,
+    grammar: "Демо-режим (MOCK_AI=true): справжнє пояснення граматики з’явиться після вимкнення заглушки.",
+    slang: "",
+  }),
   en: (text) => ({
     translation: `[Demo] A translation of "${text}" will appear here.`,
     grammar: "Demo mode (MOCK_AI=true): a real grammar explanation appears once you turn the mock off.",

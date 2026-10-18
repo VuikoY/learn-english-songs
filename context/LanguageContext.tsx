@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DICTIONARY, type TranslationKey } from "@/lib/i18n/dictionary";
-import { isLanguage, type Language, type LanguageSettings } from "@/types/game";
+import { isLanguage, isLearningLanguage, type Language, type LanguageSettings, type LearningLanguage } from "@/types/game";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthState } from "@/context/AuthContext";
 
@@ -14,7 +14,7 @@ type TranslateVars = Record<string, string | number>;
 type LanguageContextValue = LanguageSettings & {
   setUiLanguage: (language: Language) => void;
   setTargetLanguage: (language: Language) => void;
-  setSourceLanguage: (language: Language) => void;
+  setSourceLanguage: (language: LearningLanguage) => void;
   t: (key: TranslationKey, vars?: TranslateVars) => string;
 };
 
@@ -24,11 +24,11 @@ function parseSettings(raw: string | null): LanguageSettings | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
-    const normalize = (item: unknown, fallback: Language) => item === "uk" ? "ru" : isLanguage(item) ? item : fallback;
+    const normalize = (item: unknown, fallback: Language) => isLanguage(item) ? item : fallback;
     return {
       uiLanguage: normalize(value.uiLanguage, DEFAULT_SETTINGS.uiLanguage),
       targetLanguage: normalize(value.targetLanguage, DEFAULT_SETTINGS.targetLanguage),
-      sourceLanguage: normalize(value.sourceLanguage, DEFAULT_SETTINGS.sourceLanguage),
+      sourceLanguage: isLearningLanguage(value.sourceLanguage) ? value.sourceLanguage : DEFAULT_SETTINGS.sourceLanguage,
     };
   } catch { return null; }
 }
@@ -81,11 +81,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       if (!active) return;
 
       let next: LanguageSettings;
-      if (!error && row && (row.ui_language === "uk" || isLanguage(row.ui_language)) && isLanguage(row.source_language)) {
+      if (!error && row) {
         next = {
-          uiLanguage: row.ui_language === "uk" ? "ru" : row.ui_language,
-          sourceLanguage: row.source_language,
-          targetLanguage: row.target_language === "uk" ? "ru" : isLanguage(row.target_language) ? row.target_language : DEFAULT_SETTINGS.targetLanguage,
+          uiLanguage: isLanguage(row.ui_language) ? row.ui_language : DEFAULT_SETTINGS.uiLanguage,
+          sourceLanguage: isLearningLanguage(row.source_language) ? row.source_language : DEFAULT_SETTINGS.sourceLanguage,
+          targetLanguage: isLanguage(row.target_language) ? row.target_language : DEFAULT_SETTINGS.targetLanguage,
         };
         clearLegacyAccountSettings(userId);
         setCloudWritableUserId(userId);
@@ -134,7 +134,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const setUiLanguage = useCallback((uiLanguage: Language) => setSettings((prev) => ({ ...prev, uiLanguage })), []);
   const setTargetLanguage = useCallback((targetLanguage: Language) => setSettings((prev) => ({ ...prev, targetLanguage })), []);
-  const setSourceLanguage = useCallback((sourceLanguage: Language) => setSettings((prev) => ({ ...prev, sourceLanguage })), []);
+  const setSourceLanguage = useCallback((sourceLanguage: LearningLanguage) => setSettings((prev) => ({ ...prev, sourceLanguage })), []);
 
   const value = useMemo<LanguageContextValue>(() => {
     const dictionary = DICTIONARY[visibleSettings.uiLanguage];

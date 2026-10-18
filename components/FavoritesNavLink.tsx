@@ -41,9 +41,10 @@ export default function FavoritesNavLink() {
     };
   }, [refresh]);
 
-  return <Link href="/favorites" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-    <Heart className="size-4" aria-hidden="true" />
-    {t("nav.favorites")}
+  return <Link href="/favorites" className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
+    <span className="inline-flex items-center" style={{ columnGap: 3 }}>
+      <Heart className="size-4" aria-hidden="true" /><span>{t("nav.favorites")}</span>
+    </span>
     {count > 0 && <span className="rounded bg-primary px-1.5 text-xs text-primary-foreground">{count}</span>}
   </Link>;
 }

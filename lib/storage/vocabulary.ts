@@ -28,10 +28,7 @@ function isVocabularyItem(value: unknown): value is VocabularyItem {
 function normalizeItem(value: unknown): VocabularyItem | null {
   if (typeof value !== "object" || value === null) return null;
   const item = value as Record<string, unknown>;
-  const normalized = { ...item,
-    source_language: item.source_language === "uk" ? "ru" : item.source_language,
-    target_language: item.target_language === "uk" ? "ru" : item.target_language,
-  };
+  const normalized = { ...item };
   return isVocabularyItem(normalized) ? normalized : null;
 }
 

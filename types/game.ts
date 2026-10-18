@@ -4,8 +4,10 @@
 // ============================== LANGUAGES ==============================
 
 // Language codes follow ISO 639-1. Buttons display the matching short labels.
-export const LANGUAGE_CODES = ["ru", "en", "pl", "es"] as const;
+export const LANGUAGE_CODES = ["ru", "uk", "en", "pl", "es"] as const;
 export type Language = (typeof LANGUAGE_CODES)[number];
+export const LEARNING_LANGUAGE_CODES = ["en", "pl"] as const;
+export type LearningLanguage = (typeof LEARNING_LANGUAGE_CODES)[number];
 
 export type LanguageInfo = {
   code: Language;
@@ -16,6 +18,7 @@ export type LanguageInfo = {
 
 export const LANGUAGES: Record<Language, LanguageInfo> = {
   ru: { code: "ru", label: "RU", nativeName: "Русский", englishName: "Russian" },
+  uk: { code: "uk", label: "UK", nativeName: "Українська", englishName: "Ukrainian" },
   en: { code: "en", label: "EN", nativeName: "English", englishName: "English" },
   pl: { code: "pl", label: "PL", nativeName: "Polski", englishName: "Polish" },
   es: { code: "es", label: "ES", nativeName: "Español", englishName: "Spanish" },
@@ -26,11 +29,15 @@ export function isLanguage(value: unknown): value is Language {
   return typeof value === "string" && (LANGUAGE_CODES as readonly string[]).includes(value);
 }
 
+export function isLearningLanguage(value: unknown): value is LearningLanguage {
+  return typeof value === "string" && (LEARNING_LANGUAGE_CODES as readonly string[]).includes(value);
+}
+
 /** The three independent language preferences used by LanguageContext. */
 export type LanguageSettings = {
   uiLanguage: Language; // Interface language.
   targetLanguage: Language; // Language used for explanations and translations.
-  sourceLanguage: Language; // Language of the song.
+  sourceLanguage: LearningLanguage; // Language being learned / language of the song.
 };
 
 // ============================== DIFFICULTY ==============================

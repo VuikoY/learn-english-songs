@@ -21,6 +21,6 @@ export default function SongCatalog({ songs }: { songs: CatalogSong[] }) {
       <label className="grid gap-1 text-sm"><span>{labels.genre}</span><select value={genre} onChange={(event) => setGenre(event.target.value as SongGenre | "all")} className="h-10 min-w-48 rounded-md border bg-background px-3"><option value="all">{labels.all} · {labels.genre.toLowerCase()}</option>{SONG_GENRES.map((item) => <option key={item} value={item}>{labels.genres[item]}</option>)}</select></label>
       <label className="grid gap-1 text-sm"><span>{labels.difficulty}</span><select value={difficulty} onChange={(event) => setDifficulty(event.target.value as SongDifficulty | "all")} className="h-10 min-w-48 rounded-md border bg-background px-3"><option value="all">{labels.all} · {labels.difficulty.toLowerCase()}</option>{SONG_DIFFICULTIES.map((item) => <option key={item} value={item}>{labels.difficulties[item]}</option>)}</select></label>
     </div>
-    {filteredSongs.length ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{filteredSongs.map(song => <SongCard key={song.id} song={song} labels={labels} fallbackArtist={text.youtube} />)}</div> : <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">{text.emptyCatalog}</div>}
+    {filteredSongs.length ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{filteredSongs.map(song => <SongCard key={song.id} song={song} labels={labels} />)}</div> : <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">{text.emptyCatalog}</div>}
   </main>;
 }

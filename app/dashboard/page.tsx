@@ -123,9 +123,10 @@ export default function DashboardPage() {
 
 function SongEditor({ song, onSave, text, uiLanguage }: { song: Song; onSave: (song: Song, lines: LyricLine[], genre: SongGenre, difficulty: SongDifficulty) => Promise<void>; text: (typeof PAGE_TEXT)["ru"]; uiLanguage: keyof typeof PAGE_TEXT }) {
   const { t } = useLanguage();
-  const [lines,setLines]=useState(song.transcripts?.lines_json??[]); const [isPublic,setIsPublic]=useState(song.is_public); const [open,setOpen]=useState(false); const [saving,setSaving]=useState(false);
+  const transcript = Array.isArray(song.transcripts) ? song.transcripts[0] : song.transcripts;
+  const [lines,setLines]=useState(transcript?.lines_json??[]); const [isPublic,setIsPublic]=useState(song.is_public); const [open,setOpen]=useState(false); const [saving,setSaving]=useState(false);
   const [genre,setGenre]=useState(song.genre); const [difficulty,setDifficulty]=useState(song.difficulty); const labels=songMetadataLabels(uiLanguage);
-  useEffect(() => { setLines(song.transcripts?.lines_json ?? []); }, [song.id, song.transcripts]);
+  useEffect(() => { setLines(transcript?.lines_json ?? []); }, [song.id, transcript]);
   useEffect(() => { setGenre(song.genre); setDifficulty(song.difficulty); }, [song.genre, song.difficulty]);
   async function handleSave() {
     if (saving) return;

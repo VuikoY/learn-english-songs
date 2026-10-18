@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { extractVideoId } from "@/lib/youtube";
-import { isLanguage } from "@/types/game";
+import { isLearningLanguage } from "@/types/game";
 import { isSongDifficulty, isSongGenre } from "@/lib/songMetadata";
 import type { LyricLine } from "@/lib/types";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await db.auth.getUser();
   if (!user || user.is_anonymous) return NextResponse.json({ error: "Sign in to save songs." }, { status: 401 });
   const body = await request.json().catch(() => null) as { youtubeUrl?: unknown; title?: unknown; artist?: unknown; language?: unknown; genre?: unknown; difficulty?: unknown; lines?: unknown; isPublic?: unknown } | null;
-  if (!body || typeof body.youtubeUrl !== "string" || !isLanguage(body.language) || !Array.isArray(body.lines) || !body.lines.length || body.lines.some((x) => !x || typeof x.text !== "string" || typeof x.start !== "number" || typeof x.duration !== "number")) return NextResponse.json({ error: "Check the YouTube URL, language, and subtitles." }, { status: 400 });
+  if (!body || typeof body.youtubeUrl !== "string" || !isLearningLanguage(body.language) || !Array.isArray(body.lines) || !body.lines.length || body.lines.some((x) => !x || typeof x.text !== "string" || typeof x.start !== "number" || typeof x.duration !== "number")) return NextResponse.json({ error: "Check the YouTube URL, language, and subtitles." }, { status: 400 });
   const youtubeId = extractVideoId(body.youtubeUrl);
   if (!youtubeId) return NextResponse.json({ error: "Invalid YouTube URL." }, { status: 400 });
   // youtube_id is unique: an existing entry is replaced and transferred to this account.

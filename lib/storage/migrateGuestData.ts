@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
-import { isLanguage, type LanguageSettings } from "@/types/game";
+import { isLanguage, isLearningLanguage, type LanguageSettings } from "@/types/game";
 
 const GUEST_LANGUAGE_KEY = "lingo-clips:language-settings";
 const LANGUAGE_PREFIX = "lingo-clips:language-settings:v2:";
@@ -12,10 +12,10 @@ function parseLanguageSettings(raw: string | null): LanguageSettings | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
-    const uiLanguage = value.uiLanguage === "uk" ? "ru" : value.uiLanguage;
-    const targetLanguage = value.targetLanguage === "uk" ? "ru" : value.targetLanguage;
-    const sourceLanguage = value.sourceLanguage;
-    if (!isLanguage(uiLanguage) || !isLanguage(targetLanguage) || !isLanguage(sourceLanguage)) return null;
+    const uiLanguage = value.uiLanguage;
+    const targetLanguage = value.targetLanguage;
+    const sourceLanguage = isLearningLanguage(value.sourceLanguage) ? value.sourceLanguage : "en";
+    if (!isLanguage(uiLanguage) || !isLanguage(targetLanguage)) return null;
     return { uiLanguage, targetLanguage, sourceLanguage };
   } catch { return null; }
 }

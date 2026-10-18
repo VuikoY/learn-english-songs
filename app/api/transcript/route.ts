@@ -7,7 +7,7 @@ import { YoutubeTranscript } from "youtube-transcript";
 import { cleanTranscript } from "@/lib/utils/cleanTranscript";
 import { isValidVideoId } from "@/lib/youtube";
 import type { LyricLine } from "@/lib/types";
-import { isLanguage } from "@/types/game";
+import { isLearningLanguage } from "@/types/game";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   if (!videoId || !isValidVideoId(videoId)) {
     return NextResponse.json({ error: "Invalid video ID." }, { status: 400 });
   }
-  if (!isLanguage(lang)) {
+  if (!isLearningLanguage(lang)) {
     return NextResponse.json({ error: "Unsupported song language." }, { status: 400 });
   }
 
@@ -137,7 +137,7 @@ export async function POST(request: Request) {
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "Transcript confirmation is not configured." }, { status: 503 });
   const body = await request.json().catch(() => null) as { videoId?: unknown; language?: unknown; lines?: unknown } | null;
-  if (!body || typeof body.videoId !== "string" || !isValidVideoId(body.videoId) || !isLanguage(body.language) || !Array.isArray(body.lines) || body.lines.length === 0 || body.lines.length > 10000) {
+  if (!body || typeof body.videoId !== "string" || !isValidVideoId(body.videoId) || !isLearningLanguage(body.language) || !Array.isArray(body.lines) || body.lines.length === 0 || body.lines.length > 10000) {
     return NextResponse.json({ error: "Invalid transcript." }, { status: 400 });
   }
 
