@@ -27,14 +27,14 @@ isOneToOne: false
                   ]
                 },"songs": {
                   Row: {
-                    "artist": string | null,"created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"thumbnail_url": string | null,"title": string,"youtube_id": string
+                    "created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"thumbnail_url": string | null,"title": string,"youtube_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "artist"?: string | null,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
+                    "created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
                   }
                   Update: {
-                    "artist"?: string | null,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
+                    "created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
                   }
                   Relationships: [
                     

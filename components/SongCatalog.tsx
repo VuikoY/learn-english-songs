@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { PAGE_TEXT } from "@/lib/i18n/pages";
 import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty, type SongGenre } from "@/lib/songMetadata";
 
-export type CatalogSong = { id: string; youtube_id: string; title: string; artist: string | null; thumbnail_url: string | null; language: string; genre: SongGenre; difficulty: SongDifficulty };
+export type CatalogSong = { id: string; youtube_id: string; title: string; thumbnail_url: string | null; language: string; genre: SongGenre; difficulty: SongDifficulty };
 
 export default function SongCatalog({ songs }: { songs: CatalogSong[] }) {
   const { sourceLanguage, uiLanguage } = useLanguage();

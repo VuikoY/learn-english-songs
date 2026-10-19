@@ -5,20 +5,12 @@ import type { songMetadataLabels } from "@/lib/songMetadata";
 
 type MetadataLabels = ReturnType<typeof songMetadataLabels>;
 
-function displayArtist(artist: string | null): string | null {
-  const value = artist?.trim();
-  if (!value || /^(youtube|.*vevo)$/i.test(value)) return null;
-  return value;
-}
-
 export default function SongCard({ song, labels }: { song: CatalogSong; labels: MetadataLabels }) {
-  const artist = displayArtist(song.artist);
   return <article className="overflow-hidden rounded-xl border bg-card shadow-sm">
     <Link href={`/song/${song.youtube_id}`}>
       <img src={song.thumbnail_url || `https://i.ytimg.com/vi/${song.youtube_id}/hqdefault.jpg`} alt="" className="aspect-video w-full object-cover" />
       <div className="p-4">
         <h2 className="font-semibold">{song.title}</h2>
-        {artist && <p className="text-sm text-muted-foreground">{artist}</p>}
         <span className="sr-only">{labels.genres[song.genre]}, {labels.difficulties[song.difficulty]}</span>
       </div>
     </Link>

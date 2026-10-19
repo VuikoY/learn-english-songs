@@ -86,6 +86,23 @@ export default function HomePage() {
     if (normalVolumeRef.current !== null) playerRef.current?.setVolume(normalVolumeRef.current);
     playerRef.current?.pause();
   }, [clearVolumeFade]);
+  const fadeOutAndPause = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    clearVolumeFade();
+    if (normalVolumeRef.current === null) normalVolumeRef.current = player.getVolume();
+    const startVolume = player.getVolume();
+    const fadeStartedAt = performance.now();
+    volumeFadeRef.current = setInterval(() => {
+      const progress = Math.min((performance.now() - fadeStartedAt) / 1000, 1);
+      player.setVolume(Math.round(startVolume * (1 - progress)));
+      if (progress >= 1) {
+        clearVolumeFade();
+        player.pause();
+      }
+    }, 50);
+  }, [clearVolumeFade]);
   const handlePlayingChange = useCallback((isPlaying: boolean) => {
     if (isPlaying) setHasPlaybackStarted(true);
   }, []);
@@ -249,7 +266,7 @@ export default function HomePage() {
           />
         </div>
         <div className={view === "play" ? "" : "hidden"}>
-          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPause={pausePlayer} />
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAfterFade={fadeOutAndPause} onPause={pausePlayer} />
         </div>
       </div>
     </main>

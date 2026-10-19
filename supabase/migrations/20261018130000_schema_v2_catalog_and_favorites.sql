@@ -5,7 +5,6 @@ create table if not exists public.songs (
   id uuid primary key default gen_random_uuid(),
   youtube_id text not null unique,
   title text not null,
-  artist text,
   thumbnail_url text,
   language text not null default 'en',
   created_by uuid references auth.users(id) on delete set null,

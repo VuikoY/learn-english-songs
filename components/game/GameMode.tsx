@@ -6,8 +6,6 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
-  Eye,
-  EyeOff,
   LogOut,
   RotateCcw,
   Loader2,
@@ -17,11 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import ScoreBoard from "@/components/game/ScoreBoard";
 import WordBank from "@/components/game/WordBank";
-import LetterKeyboard from "@/components/game/LetterKeyboard";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
 import { useLanguage } from "@/context/LanguageContext";
 import {
-  ALPHABETS,
   buildRound,
   buildWordPool,
   countHideableWords,
@@ -31,7 +27,6 @@ import {
 } from "@/lib/game/buildRound";
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
 import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
-import { usePersistentState } from "@/lib/storage/usePersistentState";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import {
   DIFFICULTIES,
@@ -48,6 +43,8 @@ type Props = {
   youtubeId?: string;
   /** Seeks to a song line and starts playback. */
   onPlayLine?: (startSeconds: number) => void;
+  /** Starts a one-second fade out and pauses playback. */
+  onPauseAfterFade?: () => void;
   onPause?: () => void;
   songTitle?: string | null;
   settings: GameSettings;
@@ -61,9 +58,7 @@ type Props = {
 
 // Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
-const INCOMPLETE_LINE_PAUSE_DELAY_SECONDS = 1;
-
-export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, onPause, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, onPauseAfterFade, onPause, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
   const [explanationError, setExplanationError] = useState("");
@@ -74,16 +69,11 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
   const [game, dispatch] = useReducer(gameReducer, initialGameState); // Score, streak, and multiplier.
   const [round, setRound] = useState<Round | null>(null); // Current line round.
   const [position, setPosition] = useState(0); // Position among playable lines.
+  const fadeStartedRoundRef = useRef<Round | null>(null);
   const [shakeKey, setShakeKey] = useState(0); // Increment to trigger the error shake animation.
 
   const lineRef = useRef<HTMLDivElement>(null);
   const handledStartRequestRef = useRef(startRequest);
-  const [keyboardHidden, setKeyboardHidden] = usePersistentState<boolean>(
-    "lingo-clips:game-keyboard-hidden",
-    false,
-    (value): value is boolean => typeof value === "boolean",
-  );
-
   // Keep the original index for each line with enough words to play.
   const playable = useMemo(
     () =>
@@ -191,21 +181,23 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
     }
 
     const nextLineStart = playable[position + 1]?.line.start;
-    const isLastLine = position === playable.length - 1;
     const lineEnd = currentLine.start + currentLine.duration;
 
     // Keep the line tied to the song timeline, but pause at its boundary if
     // the learner has not filled every blank yet.
     const lineBoundary = nextLineStart === undefined ? lineEnd : Math.min(lineEnd, nextLineStart);
-    if (!isRoundComplete && currentTime >= lineBoundary + INCOMPLETE_LINE_PAUSE_DELAY_SECONDS) {
-      onPause?.();
+    if (!isRoundComplete && currentTime >= lineBoundary) {
+      if (fadeStartedRoundRef.current !== round) {
+        fadeStartedRoundRef.current = round;
+        onPauseAfterFade?.();
+      }
       return;
     }
 
-    // Give the learner one extra second to finish the line after its timestamp.
-    // Once it is complete, the next round still advances at the song's timestamp.
+    // Keep an incomplete round active until its timeout pauses playback.
     if (!isRoundComplete && nextLineStart !== undefined && currentTime >= nextLineStart) return;
 
+    // A completed round follows the song timeline without seeking or interrupting playback.
     if (nextLineStart !== undefined && currentTime >= nextLineStart) {
       let timePosition = position + 1;
       while (timePosition + 1 < playable.length && currentTime >= playable[timePosition + 1].line.start) {
@@ -215,17 +207,18 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
       return;
     }
 
-    if (isLastLine && currentTime >= lineEnd) {
+    if (position === playable.length - 1 && currentTime >= lineEnd) {
       onPause?.();
       setPhase("finished");
     }
-  }, [active, currentTime, currentLine, isRoundComplete, onPause, phase, playable, position]);
+  }, [active, currentTime, currentLine, isRoundComplete, onPauseAfterFade, onPause, phase, playable, position, round]);
 
   // ---------- Round controls ----------
 
   function startRound(nextPosition: number, activeSettings: GameSettings = settings) {
     const entry = playable[nextPosition];
     if (!entry) return;
+    fadeStartedRoundRef.current = null;
     setPosition(nextPosition);
     setRound(buildRound(entry.index, entry.line.text, activeSettings, wordPool));
   }
@@ -292,6 +285,11 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
   function registerCorrect(tokenId: number, bankItemId?: string) {
     dispatch({ type: "correct" });
+    const hiddenCount = round?.tokens.filter((token) => token.hidden).length ?? 0;
+    if (round && round.filledIds.length + 1 >= hiddenCount && phase === "playing" && fadeStartedRoundRef.current === round) {
+      const nextEntry = playable[position + 1];
+      if (nextEntry) onPlayLine?.(nextEntry.line.start);
+    }
     setRound((prev) =>
       prev
         ? {
@@ -483,7 +481,7 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
         multiplier={game.multiplier}
       />
 
-      <div className={`grid w-full gap-2 ${settings.mode === "first-letter" ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-4"}`}>
+      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
         {onPlayLine && (
           <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={position === 0} onClick={goPrevious}>
             <ArrowLeft className="size-4" />
@@ -500,19 +498,6 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
           {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" /> : explanationStatus === "open" ? <ChevronUp className="size-4" /> : <Sparkles className="size-4" />}
           {explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
         </Button>
-        {settings.mode === "first-letter" && (
-          <Button
-            className="w-full min-w-0 whitespace-normal px-2"
-            type="button"
-            size="sm"
-            variant="outline"
-            aria-expanded={!keyboardHidden}
-            onClick={() => setKeyboardHidden((hidden) => !hidden)}
-          >
-            {keyboardHidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-            {keyboardHidden ? t("game.keyboard.show") : t("game.keyboard.hide")}
-          </Button>
-        )}
         <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="ghost" size="sm" onClick={quitToSetup}>
           <span className="flex w-full items-center justify-end gap-2">
             <LogOut className="size-4" />
@@ -561,7 +546,7 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
         </p>
       </div>
 
-      {/* Bottom floating panel for AI actions, the word bank, or the keyboard. */}
+      {/* Bottom floating panel for AI actions or the word bank. */}
       <div className="sticky bottom-3 z-10 space-y-2">
         {explanationStatus === "loading" && <ExplanationSkeleton />}
         {explanationStatus === "error" && <p role="alert" className="text-sm text-destructive">{explanationError}</p>}
@@ -570,16 +555,8 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
             data={remoteExplanation}
           />
         )}
-        {settings.mode === "fill-blanks" ? (
+        {settings.mode === "fill-blanks" && (
           <WordBank items={round.bank} onPick={handlePickWord} disabled={isRoundComplete} />
-        ) : (
-          !keyboardHidden && (
-            <LetterKeyboard
-              letters={ALPHABETS[sourceLanguage]}
-              onPress={handleLetter}
-              disabled={isRoundComplete}
-            />
-          )
         )}
       </div>
     </section>

@@ -38,10 +38,10 @@ export default function FavoritesPage() {
       }
 
       if (!ids.length) { setSongs([]); return; }
-      let { data, error } = await db.from("songs").select("id,youtube_id,title,artist,thumbnail_url,language,genre,difficulty").in("id", ids).eq("is_public", true);
+      let { data, error } = await db.from("songs").select("id,youtube_id,title,thumbnail_url,language,genre,difficulty").in("id", ids).eq("is_public", true);
       let songsWithMetadata: CatalogSong[];
       if (error) {
-        const legacy = await db.from("songs").select("id,youtube_id,title,artist,thumbnail_url,language").in("id", ids).eq("is_public", true);
+        const legacy = await db.from("songs").select("id,youtube_id,title,thumbnail_url,language").in("id", ids).eq("is_public", true);
         if (legacy.error) throw legacy.error;
         songsWithMetadata = (legacy.data ?? []).map((song) => ({ ...song, genre: "other" as const, difficulty: "intermediate" as const }));
       } else {

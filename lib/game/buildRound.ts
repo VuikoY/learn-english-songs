@@ -9,7 +9,6 @@ import {
   type BankItem,
   type Difficulty,
   type GameSettings,
-  type Language,
   type Round,
   type WordToken,
 } from "@/types/game";
@@ -74,16 +73,6 @@ export function sameWord(a: string, b: string): boolean {
 export function firstLetterOf(token: WordToken): string {
   return Array.from(token.core)[0] ?? "";
 }
-
-// On-screen keyboard letters for first-letter mode.
-const LATIN = "abcdefghijklmnopqrstuvwxyz".split("");
-export const ALPHABETS: Record<Language, string[]> = {
-  en: LATIN,
-  es: LATIN, // ñ normalizes to n.
-  pl: [...LATIN, "ł"], // ł does not normalize to l, so it has its own key.
-  ru: "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".split(""),
-  uk: "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя".split(""),
-};
 
 // ---------------------------------------------------------------------------
 // Choosing hidden words.

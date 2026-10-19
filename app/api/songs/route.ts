@@ -19,15 +19,21 @@ export async function POST(request: Request) {
   if (!db) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   const { data: { user } } = await db.auth.getUser();
   if (!user || user.is_anonymous) return NextResponse.json({ error: "Sign in to save songs." }, { status: 401 });
-  const body = await request.json().catch(() => null) as { youtubeUrl?: unknown; title?: unknown; artist?: unknown; language?: unknown; genre?: unknown; difficulty?: unknown; lines?: unknown; isPublic?: unknown } | null;
+  const body = await request.json().catch(() => null) as { youtubeUrl?: unknown; title?: unknown; language?: unknown; genre?: unknown; difficulty?: unknown; lines?: unknown; isPublic?: unknown } | null;
   if (!body || typeof body.youtubeUrl !== "string" || !isLearningLanguage(body.language) || !Array.isArray(body.lines) || !body.lines.length || body.lines.some((x) => !x || typeof x.text !== "string" || typeof x.start !== "number" || typeof x.duration !== "number")) return NextResponse.json({ error: "Check the YouTube URL, language, and subtitles." }, { status: 400 });
   const youtubeId = extractVideoId(body.youtubeUrl);
   if (!youtubeId) return NextResponse.json({ error: "Invalid YouTube URL." }, { status: 400 });
-  // youtube_id is unique: an existing entry is replaced and transferred to this account.
+  const { data: existing, error: lookupError } = await db.from("songs").select("id").eq("youtube_id", youtubeId).maybeSingle();
+  if (lookupError) {
+    logDatabaseError("duplicate song lookup", lookupError);
+    return NextResponse.json({ error: "Could not check whether this YouTube video is already saved." }, { status: 500 });
+  }
+  if (existing) return NextResponse.json({ error: "A song with this YouTube video ID is already in the catalog." }, { status: 409 });
   const genre = isSongGenre(body.genre) ? body.genre : "other";
   const difficulty = isSongDifficulty(body.difficulty) ? body.difficulty : "intermediate";
-  const { data: song, error } = await db.from("songs").upsert({ youtube_id: youtubeId, title: typeof body.title === "string" ? body.title.slice(0, 200) : youtubeId, artist: typeof body.artist === "string" ? body.artist.slice(0, 200) : null, thumbnail_url: `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`, language: body.language, genre, difficulty, created_by: user.id, is_public: body.isPublic !== false }, { onConflict: "youtube_id" }).select("id").single();
+  const { data: song, error } = await db.from("songs").insert({ youtube_id: youtubeId, title: typeof body.title === "string" ? body.title.slice(0, 200) : youtubeId, thumbnail_url: `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`, language: body.language, genre, difficulty, created_by: user.id, is_public: body.isPublic !== false }).select("id").single();
   if (error || !song) {
+    if (error?.code === "23505") return NextResponse.json({ error: "A song with this YouTube video ID is already in the catalog." }, { status: 409 });
     if (error) logDatabaseError("song upsert", error);
     return NextResponse.json({ error: "Could not save the song. Check the server log for the Supabase error." }, { status: 500 });
   }
