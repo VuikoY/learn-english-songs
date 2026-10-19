@@ -8,8 +8,10 @@ import { PAGE_TEXT } from "@/lib/i18n/pages";
 import type { LyricLine } from "@/lib/types";
 import { extractVideoId, stripYoutubeUrlExtras } from "@/lib/youtube";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
-import { Combine, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Combine, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty, type SongGenre } from "@/lib/songMetadata";
+import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
+import { isExplanation, type Explanation } from "@/lib/types";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; transcripts?: SongTranscript | SongTranscript[] | null };
@@ -141,8 +143,9 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
   const previousTimeRef = useRef(0);
   const latestTimeRef = useRef(0);
   const autoPausedLineRef = useRef<number | null>(null);
-  const { t } = useLanguage();
+  const { t, sourceLanguage, targetLanguage } = useLanguage();
   const [currentTime, setCurrentTime] = useState(0);
+  const [explanations, setExplanations] = useState<Record<string, { loading: boolean; explanation?: Explanation; error?: string }>>({});
   const handleTimeUpdate = useCallback((seconds: number) => {
     const previousTime = previousTimeRef.current;
     latestTimeRef.current = seconds;
@@ -167,9 +170,31 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
     }
   }, []);
 
+  async function explainLine(index: number) {
+    const line = lines[index];
+    const key = `${index}:${line.start}:${line.text}`;
+    if (explanations[key]?.explanation) {
+      setExplanations((current) => { const next = { ...current }; delete next[key]; return next; });
+      return;
+    }
+    playerRef.current?.pause();
+    setExplanations((current) => ({ ...current, [key]: { loading: true } }));
+    try {
+      const context = lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" ");
+      const response = await fetch("/api/explain", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line.text, youtubeId: videoId, lineIndex: index, context, sourceLanguage, targetLanguage }) });
+      const raw = await response.text();
+      let json: unknown;
+      try { json = JSON.parse(raw); } catch { throw new Error(t("explain.serverNonJson", { status: response.status })); }
+      if (!response.ok || !isExplanation(json)) throw new Error(t("explain.requestError"));
+      setExplanations((current) => ({ ...current, [key]: { loading: false, explanation: json } }));
+    } catch (error) {
+      setExplanations((current) => ({ ...current, [key]: { loading: false, error: error instanceof Error ? error.message : t("explain.unknownError") } }));
+    }
+  }
+
   return <div className="grid gap-4">
     <section className="space-y-2"><h3 className="font-medium">{t("dashboard.player")}</h3><YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={handleTimeUpdate} onPlayingChange={handlePlaybackChange}/><p className="text-sm text-muted-foreground">{t("dashboard.reviewTiming")}</p><p className="text-xs tabular-nums text-muted-foreground">{formatTimestamp(currentTime)}</p></section>
-    <section className="space-y-2"><div className="grid grid-cols-[5.5rem_minmax(0,1fr)_7rem] items-center gap-2"><span/><span/><div className="flex items-center justify-center gap-1"><button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.mergeShortLines")} title={t("dashboard.mergeShortLines")} onClick={()=>onLinesChange(mergeShortLines(lines))}><Combine aria-hidden="true" size={16}/></button><button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.recalculateDurations")} title={t("dashboard.recalculateDurations")} onClick={()=>onLinesChange(lines.map((line,index)=>index < lines.length - 1 ? {...line,duration:Math.max(0,Number((lines[index+1].start-line.start-0.1).toFixed(2)))} : line))}><RefreshCw aria-hidden="true" size={16}/></button></div></div>{lines.length ? <div className="max-h-[26rem] space-y-2 overflow-auto">{lines.map((line,index)=><div key={index} className="flex min-w-0 items-center gap-1"><div className="flex w-fit shrink-0 items-center gap-1"><button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-xs hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("dashboard.seekToLine")} ${index+1}`} onClick={()=>{autoPausedLineRef.current=null;playerRef.current?.seekTo(line.start);playerRef.current?.play();}}>▶</button><input aria-label={t("dashboard.start")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.start} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,start:Number(event.target.value)}:item))}/></div><input aria-label={`${t("dashboard.lyrics")} ${index+1}`} className="h-8 min-w-0 flex-1 rounded border bg-background px-2" value={line.text} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,text:event.target.value}:item))}/><div className="flex w-fit shrink-0 flex-nowrap gap-1"><input aria-label={t("dashboard.duration")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.duration} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,duration:Number(event.target.value)}:item))}/><button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-destructive hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("vocab.delete")} ${index+1}`} title={t("vocab.delete")} onClick={()=>onLinesChange(lines.filter((_,i)=>i!==index))}><Trash2 aria-hidden="true" size={16}/></button></div></div>)}</div> : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{t("dashboard.loadTranscriptHint")}</p>}</section>
+    <section className="space-y-2"><div className="grid grid-cols-[5.5rem_minmax(0,1fr)_7rem] items-center gap-2"><span/><span/><div className="flex items-center justify-center gap-1"><button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.mergeShortLines")} title={t("dashboard.mergeShortLines")} onClick={()=>onLinesChange(mergeShortLines(lines))}><Combine aria-hidden="true" size={16}/></button><button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.recalculateDurations")} title={t("dashboard.recalculateDurations")} onClick={()=>onLinesChange(lines.map((line,index)=>index < lines.length - 1 ? {...line,duration:Math.max(0,Number((lines[index+1].start-line.start-0.1).toFixed(2)))} : line))}><RefreshCw aria-hidden="true" size={16}/></button></div></div>{lines.length ? <div className="max-h-[26rem] space-y-2 overflow-auto">{lines.map((line,index)=>{const key=`${index}:${line.start}:${line.text}`;const state=explanations[key];return <div key={index} className="min-w-0 space-y-1"><div className="flex min-w-0 items-center gap-1"><div className="flex w-fit shrink-0 items-center gap-1"><button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-xs hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("dashboard.seekToLine")} ${index+1}`} onClick={()=>{autoPausedLineRef.current=null;playerRef.current?.seekTo(line.start);playerRef.current?.play();}}>▶</button><input aria-label={t("dashboard.start")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.start} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,start:Number(event.target.value)}:item))}/></div><input aria-label={`${t("dashboard.lyrics")} ${index+1}`} className="h-8 min-w-0 flex-1 rounded border bg-background px-2" value={line.text} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,text:event.target.value}:item))}/><div className="flex w-fit shrink-0 flex-nowrap gap-1"><input aria-label={t("dashboard.duration")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.duration} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,duration:Number(event.target.value)}:item))}/><button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-destructive hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("vocab.delete")} ${index+1}`} title={t("vocab.delete")} onClick={()=>onLinesChange(lines.filter((_,i)=>i!==index))}><Trash2 aria-hidden="true" size={16}/></button><button type="button" disabled={state?.loading} className="flex h-8 shrink-0 items-center gap-1 rounded border px-2 text-xs hover:bg-muted disabled:opacity-50" onClick={()=>void explainLine(index)}>{state?.loading?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<Sparkles className="size-4" aria-hidden="true"/>}{state?.explanation?t("explain.hide"):t("explain.button")}</button></div></div>{state?.loading&&<ExplanationSkeleton/>}{state?.error&&<p role="alert" className="text-sm text-destructive">{state.error}</p>}{state?.explanation&&<ExplanationCard data={state.explanation}/>}</div>})}</div> : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{t("dashboard.loadTranscriptHint")}</p>}</section>
   </div>;
 }
 
