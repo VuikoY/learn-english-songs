@@ -170,7 +170,7 @@ export default function InteractiveLyrics({
           return (
             <div key={id} className="rounded px-1 py-1">
               <div className="flex items-center justify-between gap-2 px-2 py-1">
-                <div className="w-6 shrink-0"><FavoriteLineButton songId={songId} lineIndex={index} lineText={line.text} startTime={line.start} endTime={line.start + line.duration}/></div>
+                <div className="w-6 shrink-0">{(showAllLines || isActive) && <FavoriteLineButton songId={songId} lineIndex={index} lineText={line.text} startTime={line.start} endTime={line.start + line.duration}/>}</div>
                 <button type="button" onClick={() => onSeek(line.start)} className={`min-w-0 flex-1 overflow-hidden px-1 text-center text-base font-medium leading-snug md:px-2 md:text-lg md:whitespace-nowrap ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
                   <span className="relative inline-block max-w-full">
                     {isCurrent && (
