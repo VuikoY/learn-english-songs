@@ -17,6 +17,7 @@ import ScoreBoard from "@/components/game/ScoreBoard";
 import WordBank from "@/components/game/WordBank";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
 import { useLanguage } from "@/context/LanguageContext";
+import FavoriteLineButton from "@/components/FavoriteLineButton";
 import {
   buildRound,
   buildWordPool,
@@ -41,6 +42,7 @@ type Props = {
   lines: LyricLine[];
   currentTime: number;
   youtubeId?: string;
+  songId?: string | null;
   /** Seeks to a song line and starts playback. */
   onPlayLine?: (startSeconds: number) => void;
   /** Starts a one-second fade out and pauses playback. */
@@ -58,7 +60,7 @@ type Props = {
 
 // Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
-export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, onPauseAfterFade, onPause, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, songId, onPlayLine, onPauseAfterFade, onPause, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
   const [explanationError, setExplanationError] = useState("");
@@ -508,7 +510,8 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
 
       {/* Song line. The ref is used for the shake animation. */}
       <div ref={lineRef} className="rounded-xl border bg-card p-5">
-        <p className="flex flex-wrap items-baseline gap-x-2 gap-y-3 text-xl leading-snug">
+        <div className="flex items-start gap-3">
+        <p className="min-w-0 flex-1 flex flex-wrap items-baseline gap-x-2 gap-y-3 text-xl leading-snug">
           {round.tokens.map((token) => {
             // 1) This word is not hidden; show it as-is.
             if (!token.hidden) {
@@ -544,6 +547,8 @@ export default function GameMode({ lines, currentTime, youtubeId, onPlayLine, on
             );
           })}
         </p>
+        <div className="w-6 shrink-0"><FavoriteLineButton songId={songId} lineIndex={round.lineIndex} lineText={currentLine.text} startTime={currentLine.start} endTime={currentLine.start + currentLine.duration}/></div>
+        </div>
       </div>
 
       {/* Bottom floating panel for AI actions or the word bank. */}

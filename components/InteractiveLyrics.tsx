@@ -2,12 +2,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronUp, Loader2, Sparkles } from "lucide-react";
+import { ChevronUp, Loader2, Maximize2, Minimize2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
 import { useLanguage } from "@/context/LanguageContext";
 import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
+import FavoriteLineButton from "@/components/FavoriteLineButton";
 
 type Props = {
   lines: LyricLine[];
@@ -17,10 +18,9 @@ type Props = {
   onSeek: (seconds: number) => void;
   /** Called when AI Explain is clicked, so playback can be paused. */
   onExplainStart?: () => void;
-  /** Optional video title saved with a vocabulary item. */
-  songTitle?: string | null;
   /** The current song ID lets the server use its Supabase explanation cache. */
   youtubeId?: string;
+  songId?: string | null;
 };
 
 // Explanation panel state for one lyric line.
@@ -39,11 +39,12 @@ export default function InteractiveLyrics({
   currentTime,
   onSeek,
   onExplainStart,
-  songTitle = null,
   youtubeId,
+  songId,
 }: Props) {
   // Explanation panel state for each line (loading, error, or open).
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
+  const [showAllLines, setShowAllLines] = useState(false);
 
   // The target language controls AI explanations and their client cache.
   const { t, sourceLanguage, targetLanguage } = useLanguage();
@@ -63,7 +64,8 @@ export default function InteractiveLyrics({
     return lastStartedIndex >= 0 ? lastStartedIndex : 0;
   }, [activeIndex, currentTime, lines]);
   const visibleStart = Math.max(0, Math.min(currentLineIndex - 1, lines.length - 3));
-  const visibleLines = lines.slice(visibleStart, visibleStart + 3);
+  const visibleLines = showAllLines ? lines : lines.slice(visibleStart, visibleStart + 3);
+  const lineListStart = showAllLines ? 0 : visibleStart;
 
   // Update one line's state; undefined closes the panel.
   function setLineState(id: string, state: LineState | undefined) {
@@ -144,9 +146,12 @@ export default function InteractiveLyrics({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="space-y-1">
+      <div className="flex justify-end px-2">
+        <button type="button" aria-pressed={showAllLines} aria-label={t(showAllLines ? "favorites.lyricsThree" : "favorites.lyricsAll")} title={t(showAllLines ? "favorites.lyricsThree" : "favorites.lyricsAll")} onClick={() => setShowAllLines(value => !value)} className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{showAllLines ? <Minimize2 className="size-4" aria-hidden="true"/> : <Maximize2 className="size-4" aria-hidden="true"/>}<span className="sr-only">{t(showAllLines ? "favorites.lyricsThree" : "favorites.lyricsAll")}</span></button>
+      </div>
+      <div className={`space-y-1 ${showAllLines ? "max-h-[65vh] overflow-y-auto overscroll-contain pr-2" : ""}`}>
         {visibleLines.map((line, visibleIndex) => {
-          const index = visibleStart + visibleIndex;
+          const index = lineListStart + visibleIndex;
           const id = lineId(line, index, langKey);
           const isActive = index === currentLineIndex;
           const isCurrent = index === activeIndex || (
@@ -163,19 +168,11 @@ export default function InteractiveLyrics({
             : 0;
 
           return (
-            <div
-              key={id}
-              className="relative rounded px-1 py-2"
-            >
-              <div className="relative z-10 flex items-start justify-center">
-                <button
-                  type="button"
-                  onClick={() => onSeek(line.start)}
-                  className={`w-full px-24 text-center text-lg leading-snug ${
-                    isActive ? "font-semibold text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  <span className="relative inline-block max-w-full px-3">
+            <div key={id} className="rounded px-1 py-1">
+              <div className="flex items-center justify-between gap-2 px-2 py-1">
+                <div className="w-6 shrink-0"><FavoriteLineButton songId={songId} lineIndex={index} lineText={line.text} startTime={line.start} endTime={line.start + line.duration}/></div>
+                <button type="button" onClick={() => onSeek(line.start)} className={`min-w-0 flex-1 overflow-hidden px-1 text-center text-base font-medium leading-snug md:px-2 md:text-lg md:whitespace-nowrap ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+                  <span className="relative inline-block max-w-full">
                     {isCurrent && (
                       <>
                         <span
@@ -189,16 +186,19 @@ export default function InteractiveLyrics({
                         />
                       </>
                     )}
-                    <span className="relative z-10">{line.text}</span>
+                    <span className="relative z-10 whitespace-normal break-words md:whitespace-nowrap">{line.text}</span>
                   </span>
                 </button>
-
-                {isActive && (
+                {showAllLines ? (
+                  <Button type="button" variant="ghost" size="sm" aria-label={t("explain.button")} title={t("explain.button")} className="h-8 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground" disabled={state?.kind === "loading"} onClick={() => void handleExplain(index)}>
+                    {state?.kind === "loading" ? <Loader2 className="size-4 animate-spin"/> : state?.kind === "open" ? <ChevronUp className="size-4"/> : <Sparkles className="size-4"/>}
+                  </Button>
+                ) : isActive && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="absolute right-0 top-0 shrink-0"
+                    className="shrink-0 px-2 text-xs sm:text-sm"
                     disabled={state?.kind === "loading"}
                     onClick={() => handleExplain(index)}
                   >

@@ -29,6 +29,7 @@ export default function HomePage() {
   const [gameProgress, setGameProgress] = useState({ current: 0, total: 0 });
   const [gameStartRequest, setGameStartRequest] = useState(0);
   const [songTitle, setSongTitle] = useState<string | null>(null);
+  const [songDbId, setSongDbId] = useState<string | null>(null);
   const [view, setView] = usePersistentState<View>(
     "lingo-clips:active-view",
     "read",
@@ -138,6 +139,7 @@ export default function HomePage() {
   }, [clearVolumeFade]);
 
   function showVideo(id: string, newLines: LyricLine[], savedTitle?: string) {
+    setSongDbId(null);
     setVideoId(id);
     setLines(newLines);
     setCurrentTime(0);
@@ -169,6 +171,7 @@ export default function HomePage() {
             throw new Error(t("home.loadError"));
           }
           showVideo(id, transcript.lines_json as unknown as LyricLine[], song.title);
+          setSongDbId(song.id);
           return;
         }
       }
@@ -260,13 +263,13 @@ export default function HomePage() {
             lines={lines}
             currentTime={currentTime}
           youtubeId={videoId}
-            songTitle={songTitle}
+            songId={songDbId}
             onSeek={playFrom}
             onExplainStart={pausePlayer}
           />
         </div>
         <div className={view === "play" ? "" : "hidden"}>
-          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAfterFade={fadeOutAndPause} onPause={pausePlayer} />
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAfterFade={fadeOutAndPause} onPause={pausePlayer} />
         </div>
       </div>
     </main>

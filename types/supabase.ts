@@ -5,6 +5,12 @@ export type Database = {
   
   "public": {
           Tables: {
+            "favorite_lines": {
+              Row: { id: string; user_id: string; song_id: string; line_index: number; line_text: string; start_time: number; end_time: number; created_at: string }
+              Insert: { id?: string; user_id: string; song_id: string; line_index: number; line_text: string; start_time: number; end_time: number; created_at?: string }
+              Update: { id?: string; user_id?: string; song_id?: string; line_index?: number; line_text?: string; start_time?: number; end_time?: number; created_at?: string }
+              Relationships: [{ foreignKeyName: "favorite_lines_song_id_fkey"; columns: ["song_id"]; isOneToOne: false; referencedRelation: "songs"; referencedColumns: ["id"] }]
+            }
             "line_explanations": {
                   Row: {
                     "context": string,"created_at": string,"explanation_json": NonNullable<Json>,"id": string,"line_index": number | null,"line_text": string,"song_id": string | null,"source_language": string,"target_language": string
@@ -27,14 +33,14 @@ isOneToOne: false
                   ]
                 },"songs": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"thumbnail_url": string | null,"title": string,"youtube_id": string
+                    "content_type": string,"created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"thumbnail_url": string | null,"title": string,"youtube_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
+                    "content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
+                    "content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
                   }
                   Relationships: [
                     
