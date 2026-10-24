@@ -85,6 +85,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"user_media_progress": {
+                  Row: {
+                    "accuracy": number,"completed_at": string | null,"difficulty": string,"id": string,"is_completed": boolean,"media_id": string,"mistakes_count": number,"total_words": number,"user_id": string,"words_completed": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accuracy": number,"completed_at"?: string | null,"difficulty": string,"id"?: string,"is_completed"?: boolean,"media_id": string,"mistakes_count": number,"total_words": number,"user_id": string,"words_completed": number
+                  }
+                  Update: {
+                    "accuracy"?: number,"completed_at"?: string | null,"difficulty"?: string,"id"?: string,"is_completed"?: boolean,"media_id"?: string,"mistakes_count"?: number,"total_words"?: number,"user_id"?: string,"words_completed"?: number
+                  }
+                  Relationships: [
+                    {
+                      foreignKeyName: "user_media_progress_media_id_fkey"
+                      columns: ["media_id"]
+                      isOneToOne: false
+                      referencedRelation: "songs"
+                      referencedColumns: ["id"]
+                    }
+                  ]
                 },"user_settings": {
                   Row: {
                     "settings_json": NonNullable<Json>,"source_language": string,"target_language": string,"ui_language": string,"updated_at": string,"user_id": string

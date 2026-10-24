@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   if (existing) return NextResponse.json({ error: "A song with this YouTube video ID is already in the catalog." }, { status: 409 });
   const genre = isSongGenre(body.genre) ? body.genre : "other";
   const difficulty = isSongDifficulty(body.difficulty) ? body.difficulty : "intermediate";
-  const contentType = body.contentType === undefined ? "music_video" : isContentType(body.contentType) ? body.contentType : null;
+  const contentType = body.contentType === undefined || body.contentType === null || body.contentType === "" ? "music_video" : isContentType(body.contentType) ? body.contentType : null;
   if (!contentType) return NextResponse.json({ error: "Invalid content category." }, { status: 400 });
   const { data: song, error } = await db.from("songs").insert({ youtube_id: youtubeId, title: typeof body.title === "string" ? body.title.slice(0, 200) : youtubeId, thumbnail_url: `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`, language: body.language, genre, difficulty, content_type: contentType, created_by: user.id, is_public: body.isPublic !== false }).select("id").single();
   if (error || !song) {

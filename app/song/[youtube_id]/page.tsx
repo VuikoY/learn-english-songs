@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Keyboard, Puzzle, ScrollText } from "lucide-react";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
@@ -18,6 +18,14 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 type View = "read" | "play";
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<main className="mx-auto w-full max-w-6xl py-8" aria-busy="true" />}>
+      <SongPageContent />
+    </Suspense>
+  );
+}
+
+function SongPageContent() {
   const params = useParams<{ youtube_id: string }>();
   const routeVideoId = params.youtube_id;
   const { userId, loading: authLoading } = useAuthState();

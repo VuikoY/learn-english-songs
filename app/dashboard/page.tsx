@@ -10,12 +10,14 @@ import { extractVideoId, stripYoutubeUrlExtras } from "@/lib/youtube";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import { Combine, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty, type SongGenre } from "@/lib/songMetadata";
-import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
-import { isExplanation, type Explanation } from "@/lib/types";
+import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
+import type { Explanation } from "@/lib/types";
 import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
+import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; transcripts?: SongTranscript | SongTranscript[] | null };
+type LearningStats = { completedMedia: number; hardCompleted: number; wordsCompleted: number; averageAccuracy: number };
 const contentTypeLabel = (type: ContentType, t: ReturnType<typeof useLanguage>["t"]) => ({ music_video: t("favorites.music"), movie_clip: t("favorites.movieClips"), interview: t("favorites.interviews"), podcast: t("favorites.podcasts"), shorts: t("favorites.shorts"), other: t("favorites.other") })[type];
 export default function DashboardPage() {
   const { userId, loading } = useAuthState();
@@ -23,6 +25,8 @@ export default function DashboardPage() {
   const text = PAGE_TEXT[uiLanguage];
   const metadataLabels = songMetadataLabels(uiLanguage);
   const [songs, setSongs] = useState<Song[]>([]);
+  const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
+  const [learningStatsError, setLearningStatsError] = useState(false);
   const [url, setUrl] = useState("");
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [title, setTitle] = useState("");
@@ -37,7 +41,11 @@ export default function DashboardPage() {
 
   async function refresh() {
     const db = getSupabaseBrowserClient();
-    if (!db || !userId) return;
+    if (!db) {
+      setLearningStatsError(true);
+      return;
+    }
+    if (!userId) return;
     type DashboardSongRow = { id: string; youtube_id: string; title: string; is_public: boolean; genre: string; difficulty: string; content_type: ContentType; transcripts: SongTranscript | SongTranscript[] | null };
     const query = await db.from("songs").select("id,youtube_id,title,is_public,genre,difficulty,content_type,transcripts(lines_json)").eq("created_by", userId).order("created_at", { ascending: false });
     let rows: DashboardSongRow[];
@@ -58,6 +66,28 @@ export default function DashboardPage() {
         transcripts: transcript ? { lines_json: transcript.lines_json as unknown as LyricLine[] } : null,
       };
     }));
+
+    const progress = await db
+      .from("user_media_progress")
+      .select("media_id,difficulty,accuracy,words_completed,is_completed")
+      .eq("user_id", userId);
+    if (progress.error) {
+      console.error("[dashboard] Could not load learning statistics.", progress.error.code);
+      setLearningStats(null);
+      setLearningStatsError(true);
+      return;
+    }
+    const progressRows = progress.data ?? [];
+    const completedRows = progressRows.filter((row) => row.is_completed);
+    setLearningStats({
+      completedMedia: new Set(completedRows.map((row) => row.media_id)).size,
+      hardCompleted: new Set(completedRows.filter((row) => row.difficulty === "Hard").map((row) => row.media_id)).size,
+      wordsCompleted: progressRows.reduce((sum, row) => sum + row.words_completed, 0),
+      averageAccuracy: progressRows.length
+        ? Math.round(progressRows.reduce((sum, row) => sum + row.accuracy, 0) / progressRows.length)
+        : 0,
+    });
+    setLearningStatsError(false);
   }
   useEffect(() => { void refresh(); }, [userId]);
 
@@ -76,17 +106,7 @@ export default function DashboardPage() {
       const songTitle = typeof metadata.title === "string" ? metadata.title : "";
       const lyricLines = lyricData as LyricLine[];
       setLines(lyricLines); setTitle(songTitle);
-      let analysisFailed = false;
-      try {
-        const response = await fetch("/api/song-metadata", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: songTitle || videoId, language: sourceLanguage, lyrics: lyricLines.map((line) => line.text).join("\n") }) });
-        const result = await response.json();
-        if (!response.ok) throw new Error("AI metadata unavailable");
-        setGenre(result.genre as SongGenre); setDifficulty(result.difficulty as SongDifficulty);
-      } catch {
-        analysisFailed = true;
-        setGenre("other"); setDifficulty("intermediate");
-      }
-      setMessage(analysisFailed ? `${text.subtitlesReady} ${metadataLabels.analyzeError}` : text.subtitlesReady);
+      setMessage(text.subtitlesReady);
     } catch (error) { setMessage(error instanceof Error ? error.message : text.loadError); }
     finally { setBusy(false); }
   }
@@ -94,7 +114,7 @@ export default function DashboardPage() {
   async function save() {
     setBusy(true); setSaving(true);
     try {
-      const response = await fetch("/api/songs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl: url, title, language: sourceLanguage, genre, difficulty, contentType, lines, isPublic }) });
+      const response = await fetch("/api/songs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl: url, title, language: sourceLanguage, genre: genre || "other", difficulty: difficulty || "intermediate", contentType: contentType || "music_video", lines, isPublic }) });
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : text.songSaveError);
       setMessage(text.songSaved); setLines([]); setUrl(""); setTitle(""); await refresh();
@@ -111,10 +131,30 @@ export default function DashboardPage() {
   if (!userId) return <main className="mx-auto max-w-5xl p-8"><h1 className="text-2xl font-bold">{text.mySongs}</h1><p className="mt-3">{text.loginPrompt}</p><Link className="mt-3 inline-block text-primary underline" href="/auth">{text.login}</Link></main>;
 
   return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10">
+    <section>
+      <h2 className="mb-4 text-2xl font-semibold">{t("dashboard.learningStats")}</h2>
+      {learningStatsError ? (
+        <p role="alert" className="text-sm text-destructive">{t("dashboard.learningStatsError")}</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            [t("dashboard.completedMedia"), learningStats?.completedMedia ?? "—"],
+            [t("dashboard.hardCompleted"), learningStats?.hardCompleted ?? "—"],
+            [t("dashboard.wordsCompleted"), learningStats?.wordsCompleted ?? "—"],
+            [t("dashboard.averageAccuracy"), learningStats ? `${learningStats.averageAccuracy}%` : "—"],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border bg-card p-4">
+              <p className="text-sm text-muted-foreground">{label}</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
     <section><h1 className="text-3xl font-bold">{text.mySongs}</h1><div className="mt-5 grid gap-3 rounded-xl border p-5">
       <h2 className="text-xl font-semibold">{text.addYoutube}</h2>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><input className="min-w-0 flex-1 rounded border bg-background px-3 py-2" placeholder={text.youtubeUrl} value={url} onChange={event => setUrl(stripYoutubeUrlExtras(event.target.value))}/><label className="grid gap-1 text-sm"><span>{t("favorites.category")}</span><select aria-label={t("favorites.category")} className="rounded border bg-background px-3 py-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex shrink-0 items-center gap-2 text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><button disabled={busy||!url} onClick={fetchPreview} className="shrink-0 rounded border px-4 py-2 disabled:opacity-50">{text.loadSubtitles}</button></div>
-      {lines.length > 0 && <><p className="text-sm text-muted-foreground">{metadataLabels.aiHint}</p><div className="grid max-w-xl grid-cols-1 gap-3"><label className="grid gap-1 text-sm"><span>{metadataLabels.genre}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{metadataLabels.genres[item]}</option>)}</select></label><label className="grid gap-1 text-sm"><span>{metadataLabels.difficulty}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{metadataLabels.difficulties[item]}</option>)}</select></label></div></>}
+      {lines.length > 0 && <div className="grid max-w-xl grid-cols-1 gap-3"><label className="grid gap-1 text-sm"><span>{metadataLabels.genre}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{metadataLabels.genres[item]}</option>)}</select></label><label className="grid gap-1 text-sm"><span>{metadataLabels.difficulty}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{metadataLabels.difficulties[item]}</option>)}</select></label></div>}
       {lines.length>0&&<button disabled={saving} onClick={save} className="inline-flex items-center gap-2 rounded bg-primary px-4 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60">{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.save}</button>}
       {previewVideoId && <TranscriptTimingEditor videoId={previewVideoId} lines={lines} onLinesChange={setLines}/>}
       {lines.length>0&&<input className="rounded border bg-background px-3 py-2" placeholder={text.songTitle} value={title} onChange={event=>setTitle(event.target.value)}/>}
@@ -147,8 +187,9 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
   const latestTimeRef = useRef(0);
   const autoPausedLineRef = useRef<number | null>(null);
   const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const streamExplanation = useStreamingExplanation();
   const [currentTime, setCurrentTime] = useState(0);
-  const [explanations, setExplanations] = useState<Record<string, { loading: boolean; explanation?: Explanation; error?: string }>>({});
+  const [explanations, setExplanations] = useState<Record<string, { loading: boolean; explanation?: Explanation; partial?: Partial<Explanation>; error?: string }>>({});
   const handleTimeUpdate = useCallback((seconds: number) => {
     const previousTime = previousTimeRef.current;
     latestTimeRef.current = seconds;
@@ -183,13 +224,12 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
     playerRef.current?.pause();
     setExplanations((current) => ({ ...current, [key]: { loading: true } }));
     try {
-      const context = lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" ");
-      const response = await fetch("/api/explain", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line.text, youtubeId: videoId, lineIndex: index, context, sourceLanguage, targetLanguage }) });
-      const raw = await response.text();
-      let json: unknown;
-      try { json = JSON.parse(raw); } catch { throw new Error(t("explain.serverNonJson", { status: response.status })); }
-      if (!response.ok || !isExplanation(json)) throw new Error(t("explain.requestError"));
-      setExplanations((current) => ({ ...current, [key]: { loading: false, explanation: json } }));
+    const context = lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" ");
+    const explanation = await streamExplanation(
+      { text: line.text, youtubeId: videoId, lineIndex: index, context, sourceLanguage, targetLanguage },
+      (partial) => setExplanations((current) => ({ ...current, [key]: { loading: true, partial } })),
+    );
+    setExplanations((current) => ({ ...current, [key]: { loading: false, explanation } }));
     } catch (error) {
       setExplanations((current) => ({ ...current, [key]: { loading: false, error: error instanceof Error ? error.message : t("explain.unknownError") } }));
     }
@@ -197,7 +237,43 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
 
   return <div className="grid gap-4">
     <section className="space-y-2"><h3 className="font-medium">{t("dashboard.player")}</h3><YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={handleTimeUpdate} onPlayingChange={handlePlaybackChange}/><p className="text-sm text-muted-foreground">{t("dashboard.reviewTiming")}</p><p className="text-xs tabular-nums text-muted-foreground">{formatTimestamp(currentTime)}</p></section>
-    <section className="space-y-2"><div className="grid grid-cols-[5.5rem_minmax(0,1fr)_7rem] items-center gap-2"><span/><span/><div className="flex items-center justify-center gap-1"><button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.mergeShortLines")} title={t("dashboard.mergeShortLines")} onClick={()=>onLinesChange(mergeShortLines(lines))}><Combine aria-hidden="true" size={16}/></button><button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.recalculateDurations")} title={t("dashboard.recalculateDurations")} onClick={()=>onLinesChange(lines.map((line,index)=>index < lines.length - 1 ? {...line,duration:Math.max(0,Number((lines[index+1].start-line.start-0.1).toFixed(2)))} : line))}><RefreshCw aria-hidden="true" size={16}/></button></div></div>{lines.length ? <div className="max-h-[26rem] space-y-2 overflow-auto">{lines.map((line,index)=>{const key=`${index}:${line.start}:${line.text}`;const state=explanations[key];return <div key={index} className="min-w-0 space-y-1"><div className="flex min-w-0 items-center gap-1"><div className="flex w-fit shrink-0 items-center gap-1"><button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-xs hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("dashboard.seekToLine")} ${index+1}`} onClick={()=>{autoPausedLineRef.current=null;playerRef.current?.seekTo(line.start);playerRef.current?.play();}}>▶</button><input aria-label={t("dashboard.start")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.start} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,start:Number(event.target.value)}:item))}/></div><input aria-label={`${t("dashboard.lyrics")} ${index+1}`} className="h-8 min-w-0 flex-1 rounded border bg-background px-2" value={line.text} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,text:event.target.value}:item))}/><div className="flex w-fit shrink-0 flex-nowrap gap-1"><input aria-label={t("dashboard.duration")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.duration} onChange={event=>onLinesChange(lines.map((item,i)=>i===index?{...item,duration:Number(event.target.value)}:item))}/><button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-destructive hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("vocab.delete")} ${index+1}`} title={t("vocab.delete")} onClick={()=>onLinesChange(lines.filter((_,i)=>i!==index))}><Trash2 aria-hidden="true" size={16}/></button><button type="button" disabled={state?.loading} className="flex h-8 shrink-0 items-center gap-1 rounded border px-2 text-xs hover:bg-muted disabled:opacity-50" onClick={()=>void explainLine(index)}>{state?.loading?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<Sparkles className="size-4" aria-hidden="true"/>}{state?.explanation?t("explain.hide"):t("explain.button")}</button></div></div>{state?.loading&&<ExplanationSkeleton/>}{state?.error&&<p role="alert" className="text-sm text-destructive">{state.error}</p>}{state?.explanation&&<ExplanationCard data={state.explanation}/>}</div>})}</div> : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{t("dashboard.loadTranscriptHint")}</p>}</section>
+    <section className="space-y-2">
+      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_7rem] items-center gap-2">
+        <span />
+        <span />
+        <div className="flex items-center justify-center gap-1">
+          <button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.mergeShortLines")} title={t("dashboard.mergeShortLines")} onClick={() => onLinesChange(mergeShortLines(lines))}><Combine aria-hidden="true" size={16} /></button>
+          <button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.recalculateDurations")} title={t("dashboard.recalculateDurations")} onClick={() => onLinesChange(lines.map((line, index) => index < lines.length - 1 ? { ...line, duration: Math.max(0, Number((lines[index + 1].start - line.start - 0.1).toFixed(2))) } : line))}><RefreshCw aria-hidden="true" size={16} /></button>
+        </div>
+      </div>
+      {lines.length ? (
+        <div className="max-h-[26rem] space-y-2 overflow-auto">
+          {lines.map((line, index) => {
+            const key = `${index}:${line.start}:${line.text}`;
+            const state = explanations[key];
+            return (
+              <div key={index} className="min-w-0 space-y-1">
+                <div className="flex min-w-0 items-center gap-1">
+                  <div className="flex w-fit shrink-0 items-center gap-1">
+                    <button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-xs hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("dashboard.seekToLine")} ${index + 1}`} onClick={() => { autoPausedLineRef.current = null; playerRef.current?.seekTo(line.start); playerRef.current?.play(); }}>▶</button>
+                    <input aria-label={t("dashboard.start")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.start} onChange={event => onLinesChange(lines.map((item, i) => i === index ? { ...item, start: Number(event.target.value) } : item))} />
+                  </div>
+                  <input aria-label={`${t("dashboard.lyrics")} ${index + 1}`} className="h-8 min-w-0 flex-1 rounded border bg-background px-2" value={line.text} onChange={event => onLinesChange(lines.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />
+                  <div className="flex w-fit shrink-0 flex-nowrap gap-1">
+                    <input aria-label={t("dashboard.duration")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.duration} onChange={event => onLinesChange(lines.map((item, i) => i === index ? { ...item, duration: Number(event.target.value) } : item))} />
+                    <button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-destructive hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("vocab.delete")} ${index + 1}`} title={t("vocab.delete")} onClick={() => onLinesChange(lines.filter((_, i) => i !== index))}><Trash2 aria-hidden="true" size={16} /></button>
+                    <button type="button" disabled={state?.loading} className="flex h-8 shrink-0 items-center gap-1 rounded border px-2 text-xs hover:bg-muted disabled:opacity-50" onClick={() => void explainLine(index)}>{state?.loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}{state?.explanation ? t("explain.hide") : t("explain.button")}</button>
+                  </div>
+                </div>
+                {state?.loading && (state.partial ? <StreamingExplanation data={state.partial} /> : <ExplanationSkeleton />)}
+                {state?.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}
+                {state?.explanation && <ExplanationCard data={state.explanation} />}
+              </div>
+            );
+          })}
+        </div>
+      ) : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{t("dashboard.loadTranscriptHint")}</p>}
+    </section>
   </div>;
 }
 

@@ -6,12 +6,15 @@ import { useLanguage } from "@/context/LanguageContext";
 import { PAGE_TEXT } from "@/lib/i18n/pages";
 import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty, type SongGenre } from "@/lib/songMetadata";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuthState } from "@/context/AuthContext";
+import { fetchMediaCompletion } from "@/lib/mediaProgress";
 
 export type ContentType = "music_video" | "movie_clip" | "interview" | "podcast" | "shorts" | "other";
 export const CONTENT_TYPES: ContentType[] = ["music_video", "movie_clip", "interview", "podcast", "shorts", "other"];
-export type CatalogSong = { id: string; youtube_id: string; title: string; thumbnail_url: string | null; language: string; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType };
+export type CatalogSong = { id: string; youtube_id: string; title: string; thumbnail_url: string | null; language: string; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; isCompleted?: boolean; completedDifficulty?: "Easy" | "Medium" | "Hard" | null };
 
 export default function SongCatalog({ songs }: { songs: CatalogSong[] }) {
+  const { userId } = useAuthState();
   const { sourceLanguage, uiLanguage, t } = useLanguage();
   const [genre, setGenre] = useState<SongGenre | "all">("all");
   const [difficulty, setDifficulty] = useState<SongDifficulty | "all">("all");
@@ -22,13 +25,30 @@ export default function SongCatalog({ songs }: { songs: CatalogSong[] }) {
   useEffect(() => {
     const db = getSupabaseBrowserClient();
     if (!db) return;
+    let active = true;
     let query = db.from("songs").select("id,youtube_id,title,thumbnail_url,language,genre,difficulty,content_type").eq("is_public", true);
     if (contentType !== "all") query = query.eq("content_type", contentType);
-    void query.order("created_at", { ascending: false }).then(({ data, error }) => {
-      if (!error && data) setCategorySongs(data as unknown as CatalogSong[]);
-      else setCategorySongs(songs.filter(song => contentType === "all" || song.content_type === contentType));
+    void query.order("created_at", { ascending: false }).then(async ({ data, error }) => {
+      if (!active) return;
+      const catalogSongs = !error && data
+        ? data as unknown as CatalogSong[]
+        : songs.filter(song => contentType === "all" || song.content_type === contentType);
+      if (error) console.error("[catalog] Could not refresh songs.", error.code);
+
+      try {
+        const completion = await fetchMediaCompletion(db, userId, catalogSongs.map((song) => song.id));
+        if (active) setCategorySongs(catalogSongs.map((song) => ({
+          ...song,
+          isCompleted: completion[song.id]?.isCompleted ?? false,
+          completedDifficulty: completion[song.id]?.completedDifficulty ?? null,
+        })));
+      } catch (progressError) {
+        console.error("[catalog] Could not load completion badges.", progressError);
+        if (active) setCategorySongs(catalogSongs);
+      }
     });
-  }, [contentType, songs]);
+    return () => { active = false; };
+  }, [contentType, songs, userId]);
   const translatedContentLabels: Record<ContentType | "all", string> = { all: t("favorites.all"), music_video: t("favorites.music"), movie_clip: t("favorites.movieClips"), interview: t("favorites.interviews"), podcast: t("favorites.podcasts"), shorts: t("favorites.shorts"), other: t("favorites.other") };
   const filteredSongs = categorySongs.filter((song) => song.language === sourceLanguage && (genre === "all" || song.genre === genre) && (difficulty === "all" || song.difficulty === difficulty));
   return <main className="mx-auto w-full max-w-6xl px-4 py-10">

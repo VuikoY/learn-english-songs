@@ -13,8 +13,8 @@ import { LANGUAGES, isLanguage, type Language } from "@/types/game";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
 const MAX_TEXT_LENGTH = 300;
 
 /** Builds a prompt from supported language names without including arbitrary client text. */
@@ -64,10 +64,9 @@ function logGeminiFailure(details: {
   errorType?: string;
   finishReason?: string | null;
 }) {
-  // Never log the API key, provider message/body, prompt, or generated text.
   console.error("[explain] Gemini request failed", {
     ...details,
-    modelConfigured: Boolean(process.env.GEMINI_MODEL),
+    model: MODEL,
   });
 }
 
@@ -233,9 +232,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const geminiResponse = await fetch(GEMINI_URL, {
+    const geminiResponse = await fetch(GEMINI_STREAM_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        "x-goog-api-key": apiKey,
+      },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: buildSystemPrompt(sourceLanguage, targetLanguage, context.length > 0) }] },
         contents: [{
@@ -248,6 +251,7 @@ export async function POST(request: Request) {
           responseSchema: RESPONSE_SCHEMA,
         },
       }),
+      signal: request.signal,
     });
 
     if (!geminiResponse.ok) {
@@ -263,29 +267,97 @@ export async function POST(request: Request) {
       const error = geminiResponse.status === 400 || geminiResponse.status === 403
         ? "Gemini rejected the API key or model access. Check the key and its permissions in Google AI Studio."
         : "The AI service is temporarily unavailable. Please try again.";
-      return NextResponse.json(
-        { error },
-        { status: 502 },
-      );
+      return NextResponse.json({ error }, { status: 502 });
     }
 
-    const data = await geminiResponse.json();
-    const rawJson: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawJson) {
-      const finishReason = data?.promptFeedback?.blockReason ?? data?.candidates?.[0]?.finishReason;
-      logGeminiFailure({
-        category: "empty_or_blocked_model_response",
-        httpStatus: geminiResponse.status,
-        finishReason: safeProviderStatus(finishReason),
-      });
+    if (!geminiResponse.body) {
+      logGeminiFailure({ category: "empty_stream_body", httpStatus: geminiResponse.status });
+      return NextResponse.json({ error: "The AI service returned no explanation. Please try again." }, { status: 502 });
     }
-    if (!rawJson) throw new Error("The model returned an empty response.");
 
-    const parsed: unknown = JSON.parse(rawJson);
-    if (!isExplanation(parsed)) throw new Error("The model returned a response in an unexpected format.");
+    let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+        const reader = geminiResponse.body!.getReader();
+        upstreamReader = reader;
+        let buffer = "";
+        let rawJson = "";
+        let finishReason: unknown;
 
-    await cacheExplanation(parsed);
-    return NextResponse.json(parsed);
+        const send = (event: string, data: unknown) => {
+          if (!cancelled) controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        };
+
+        const processEvent = (block: string) => {
+          const eventData = block
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trimStart())
+            .join("\n");
+          if (!eventData || eventData === "[DONE]") return;
+
+          const event = JSON.parse(eventData) as {
+            candidates?: Array<{
+              content?: { parts?: Array<{ text?: unknown }> };
+              finishReason?: unknown;
+            }>;
+            promptFeedback?: { blockReason?: unknown };
+          };
+          finishReason = event.promptFeedback?.blockReason ?? event.candidates?.[0]?.finishReason ?? finishReason;
+          for (const part of event.candidates?.[0]?.content?.parts ?? []) {
+            if (typeof part.text !== "string" || !part.text) continue;
+            rawJson += part.text;
+            send("chunk", { text: part.text });
+          }
+        };
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            buffer += decoder.decode(value, { stream: !done });
+            const blocks = buffer.split(/\r?\n\r?\n/);
+            buffer = blocks.pop() ?? "";
+            for (const block of blocks) processEvent(block);
+            if (done) break;
+          }
+          if (buffer.trim()) processEvent(buffer);
+
+          const parsed: unknown = JSON.parse(rawJson);
+          if (!isExplanation(parsed)) throw new Error("The model returned an invalid explanation.");
+          await cacheExplanation(parsed);
+          send("done", { explanation: parsed });
+        } catch (error) {
+          logGeminiFailure({
+            category: error instanceof SyntaxError
+              ? "invalid_provider_or_model_json"
+              : error instanceof TypeError
+                ? "upstream_transport_error"
+                : "response_processing_error",
+            errorType: error instanceof Error ? error.name : "UnknownError",
+            finishReason: safeProviderStatus(finishReason),
+          });
+          send("error", { code: "explanation_stream_failed" });
+        } finally {
+          reader.releaseLock();
+          if (!cancelled) controller.close();
+        }
+      },
+      cancel() {
+        cancelled = true;
+        return upstreamReader?.cancel();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (error) {
     logGeminiFailure({
       category: error instanceof SyntaxError

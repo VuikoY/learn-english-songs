@@ -4,11 +4,12 @@
 import { useMemo, useState } from "react";
 import { ChevronUp, Loader2, Maximize2, Minimize2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
+import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
 import { useLanguage } from "@/context/LanguageContext";
-import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
+import type { Explanation, LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import FavoriteLineButton from "@/components/FavoriteLineButton";
+import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 
 type Props = {
   lines: LyricLine[];
@@ -25,7 +26,7 @@ type Props = {
 
 // Explanation panel state for one lyric line.
 type LineState =
-  | { kind: "loading" } // Waiting for a response; show the skeleton.
+  | { kind: "loading"; partial?: Partial<Explanation> }
   | { kind: "error"; message: string }
   | { kind: "open"; explanation?: Explanation }; // The card is expanded.
 
@@ -45,6 +46,7 @@ export default function InteractiveLyrics({
   // Explanation panel state for each line (loading, error, or open).
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
   const [showAllLines, setShowAllLines] = useState(false);
+  const streamExplanation = useStreamingExplanation();
 
   // The target language controls AI explanations and their client cache.
   const { t, sourceLanguage, targetLanguage } = useLanguage();
@@ -110,34 +112,17 @@ export default function InteractiveLyrics({
         setLineState(id, { kind: "open", explanation: databaseExplanation });
         return;
       }
-      const response = await fetch("/api/explain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const explanation = await streamExplanation({
           text: line.text,
           youtubeId,
           lineIndex: index,
           context: lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" "),
           sourceLanguage,
           targetLanguage,
-        }),
-      });
-
-      // Read the response as text so HTML or empty responses produce a useful error.
-      const raw = await response.text();
-      let json: Record<string, unknown>;
-      try {
-        json = JSON.parse(raw);
-      } catch {
-        throw new Error(t("explain.serverNonJson", { status: response.status }));
-      }
-      if (!response.ok) {
-        throw new Error(t("explain.requestError"));
-      }
-      if (!isExplanation(json)) throw new Error(t("explain.requestError"));
+        }, (partial) => setLineState(id, { kind: "loading", partial }));
 
       // The API route stores successful explanations in Supabase before returning.
-      setLineState(id, { kind: "open", explanation: json as unknown as Explanation });
+      setLineState(id, { kind: "open", explanation });
     } catch (error) {
       const message = error instanceof Error ? error.message : t("explain.unknownError");
       setLineState(id, { kind: "error", message });
@@ -215,7 +200,11 @@ export default function InteractiveLyrics({
               </div>
 
               {/* Render content below the line based on its state. */}
-              {state?.kind === "loading" && <ExplanationSkeleton />}
+              {state?.kind === "loading" && (
+                state.partial
+                  ? <StreamingExplanation data={state.partial} />
+                  : <ExplanationSkeleton />
+              )}
 
               {state?.kind === "error" && (
                 <p role="alert" className="mt-2 text-sm text-destructive">

@@ -15,10 +15,11 @@ type SectionProps = {
   title: string;
   /** Tailwind classes for the icon badge. */
   accent: string;
+  streaming?: boolean;
   children: ReactNode;
 };
 
-function Section({ icon: Icon, title, accent, children }: SectionProps) {
+function Section({ icon: Icon, title, accent, streaming = false, children }: SectionProps) {
   return (
     <div className="flex gap-3">
       <div className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${accent}`}>
@@ -26,7 +27,10 @@ function Section({ icon: Icon, title, accent, children }: SectionProps) {
       </div>
       <div className="min-w-0">
         <h4 className="text-sm font-medium">{title}</h4>
-        <p className="text-sm leading-relaxed text-muted-foreground">{children}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {children}
+          {streaming && <span aria-hidden="true" className="ml-0.5 inline-block animate-pulse text-primary">▍</span>}
+        </p>
       </div>
     </div>
   );
@@ -34,9 +38,17 @@ function Section({ icon: Icon, title, accent, children }: SectionProps) {
 
 // ---------- Three sections without a surrounding card, used in chat and vocabulary ----------
 
-export function ExplanationSections({ data }: { data: Explanation }) {
+export function ExplanationSections({ data, streaming = false }: { data: Partial<Explanation>; streaming?: boolean }) {
   const { t } = useLanguage();
-  const hasSlang = data.slang.trim() !== "";
+  const activeField = streaming
+    ? data.slang !== undefined
+      ? "slang"
+      : data.grammar !== undefined
+        ? "grammar"
+        : data.translation !== undefined
+          ? "translation"
+          : undefined
+    : undefined;
 
   return (
     <div className="space-y-4">
@@ -44,24 +56,29 @@ export function ExplanationSections({ data }: { data: Explanation }) {
         icon={Languages}
         title={t("explain.translation")}
         accent="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+        streaming={activeField === "translation"}
       >
-        {data.translation}
+        {data.translation ?? ""}
       </Section>
 
       <Section
         icon={BookOpen}
         title={t("explain.grammar")}
         accent="bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300"
+        streaming={activeField === "grammar"}
       >
-        {data.grammar}
+        {data.grammar ?? ""}
       </Section>
 
       <Section
         icon={Zap}
         title={t("explain.slang")}
         accent="bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+        streaming={activeField === "slang"}
       >
-        {hasSlang ? data.slang : t("explain.noSlang")}
+        {data.slang === undefined || data.slang === ""
+          ? streaming ? "" : t("explain.noSlang")
+          : data.slang}
       </Section>
     </div>
   );
@@ -70,19 +87,27 @@ export function ExplanationSections({ data }: { data: Explanation }) {
 // ---------- Inline card below a song line, with animation and an action area ----------
 
 type CardProps = {
-  data: Explanation;
+  data: Partial<Explanation>;
+  streaming?: boolean;
   /** Optional actions displayed at the bottom of the card. */
   actions?: ReactNode;
 };
 
-export default function ExplanationCard({ data, actions }: CardProps) {
+export default function ExplanationCard({ data, streaming = false, actions }: CardProps) {
   return (
     // The tw-animate-css package provides these animation utilities.
-    <div className="mt-3 space-y-4 rounded-xl border bg-muted/40 p-4 duration-300 animate-in fade-in slide-in-from-top-2 motion-reduce:animate-none">
-      <ExplanationSections data={data} />
+    <div aria-busy={streaming} className="mt-3 space-y-4 rounded-xl border bg-muted/40 p-4 duration-300 animate-in fade-in slide-in-from-top-2 motion-reduce:animate-none">
+      <ExplanationSections data={data} streaming={streaming} />
       {actions && <div className="flex flex-wrap items-center gap-3 border-t pt-3">{actions}</div>}
     </div>
   );
+}
+
+export function StreamingExplanation({ data }: { data: Partial<Explanation> }) {
+  const hasContent = Object.values(data).some((value) => typeof value === "string");
+  return hasContent
+    ? <ExplanationCard data={data} streaming />
+    : <ExplanationSkeleton />;
 }
 
 // ---------- Loading skeleton matching the card layout ----------

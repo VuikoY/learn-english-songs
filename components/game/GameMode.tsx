@@ -7,15 +7,15 @@ import {
   ArrowDown,
   ArrowLeft,
   LogOut,
-  RotateCcw,
   Loader2,
   Sparkles,
   ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import ScoreBoard from "@/components/game/ScoreBoard";
+import GameCompletionModal from "@/components/game/GameCompletionModal";
 import WordBank from "@/components/game/WordBank";
-import ExplanationCard, { ExplanationSkeleton } from "@/components/ExplanationCard";
+import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
+import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 import { useLanguage } from "@/context/LanguageContext";
 import FavoriteLineButton from "@/components/FavoriteLineButton";
 import {
@@ -27,15 +27,17 @@ import {
   sameWord,
 } from "@/lib/game/buildRound";
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
-import { isExplanation, type Explanation, type LyricLine } from "@/lib/types";
+import type { Explanation, LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import {
   DIFFICULTIES,
+  HIDE_RATIO,
   type Difficulty,
   type BankItem,
   type GamePhase,
   type GameSettings,
   type Round,
+  type WordToken,
 } from "@/types/game";
 
 type Props = {
@@ -62,16 +64,22 @@ type Props = {
 const MIN_WORDS_PER_LINE = 3;
 export default function GameMode({ lines, currentTime, youtubeId, songId, onPlayLine, onPauseAfterFade, onPause, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const streamExplanation = useStreamingExplanation();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
   const [explanationError, setExplanationError] = useState("");
   const [remoteExplanation, setRemoteExplanation] = useState<Explanation | null>(null);
+  const [partialExplanation, setPartialExplanation] = useState<Partial<Explanation> | null>(null);
 
   // ---------- State ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
-  const [game, dispatch] = useReducer(gameReducer, initialGameState); // Score, streak, and multiplier.
+  const [game, dispatch] = useReducer(gameReducer, initialGameState);
   const [round, setRound] = useState<Round | null>(null); // Current line round.
   const [position, setPosition] = useState(0); // Position among playable lines.
+  const [consecutiveMistakes, setConsecutiveMistakes] = useState(0);
+  const [progressStatus, setProgressStatus] = useState<"idle" | "saving" | "saved" | "error" | "sign-in">("idle");
   const fadeStartedRoundRef = useRef<Round | null>(null);
+  const activeMistakeRef = useRef<{ wordKey: string; count: number } | null>(null);
+  const progressSavedRef = useRef(false);
   const [shakeKey, setShakeKey] = useState(0); // Increment to trigger the error shake animation.
 
   const lineRef = useRef<HTMLDivElement>(null);
@@ -84,6 +92,17 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
         .filter(({ line }) => countHideableWords(line.text) >= MIN_WORDS_PER_LINE),
     [lines],
   );
+  const totalHiddenWords = useMemo(
+    () => playable.reduce(
+      (total, { line }) => total + Math.max(1, Math.round(countHideableWords(line.text) * HIDE_RATIO[settings.difficulty])),
+      0,
+    ),
+    [playable, settings.difficulty],
+  );
+  const completedWords = Math.min(game.wordsCompleted, totalHiddenWords);
+  const progressPercent = totalHiddenWords > 0 ? (completedWords / totalHiddenWords) * 100 : 0;
+  const answers = game.correct + game.mistakes;
+  const accuracy = answers === 0 ? 0 : Math.round((game.correct / answers) * 100);
 
   useEffect(() => {
     const current = phase === "setup" ? 0 : Math.min(position + 1, Math.max(playable.length, 1));
@@ -95,6 +114,10 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
 
   // Derived values are calculated during render rather than stored in state.
   const nextBlank = round?.tokens.find((tok) => tok.hidden && !round.filledIds.includes(tok.id));
+  const activeWordKey = round && nextBlank ? `${round.lineIndex}:${nextBlank.id}` : null;
+  const activeWordMistakes = activeWordKey && activeMistakeRef.current?.wordKey === activeWordKey
+    ? consecutiveMistakes
+    : 0;
   const isRoundComplete = round !== null && nextBlank === undefined;
   const currentLine = round ? lines[round.lineIndex] : null;
 
@@ -118,6 +141,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     setExplanationStatus("closed");
     setExplanationError("");
     setRemoteExplanation(null);
+    setPartialExplanation(null);
   }, [explanationLineKey]);
 
   async function toggleExplanation() {
@@ -133,6 +157,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       .join(" ");
     setExplanationStatus("loading");
     setExplanationError("");
+    setPartialExplanation(null);
     try {
       let databaseExplanation: Explanation | null = null;
       try {
@@ -152,23 +177,14 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
         setExplanationStatus("open");
         return;
       }
-      const response = await fetch("/api/explain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const result = await streamExplanation({
           text: currentLine.text,
           youtubeId,
           lineIndex: round!.lineIndex,
           context,
           sourceLanguage,
           targetLanguage,
-        }),
-      });
-      const raw = await response.text();
-      let result: Record<string, unknown>;
-      try { result = JSON.parse(raw); } catch { throw new Error(`Server returned invalid JSON (${response.status}).`); }
-      if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not get an explanation.");
-      if (!isExplanation(result)) throw new Error("The explanation response has an invalid format.");
+        }, setPartialExplanation);
       setRemoteExplanation(result);
       setExplanationStatus("open");
     } catch (error) {
@@ -215,12 +231,45 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     }
   }, [active, currentTime, currentLine, isRoundComplete, onPauseAfterFade, onPause, phase, playable, position, round]);
 
+  useEffect(() => {
+    if (phase !== "finished" || !songId || progressSavedRef.current) return;
+    progressSavedRef.current = true;
+    setProgressStatus("saving");
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/media-progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mediaId: songId,
+            difficulty: `${settings.difficulty[0].toUpperCase()}${settings.difficulty.slice(1)}`,
+            accuracy,
+            wordsCompleted: completedWords,
+            totalWords: totalHiddenWords,
+            mistakesCount: game.mistakes,
+          }),
+        });
+        const result = await response.json().catch(() => null) as { error?: unknown } | null;
+        if (!response.ok) {
+          setProgressStatus(result?.error === "AUTH_REQUIRED" ? "sign-in" : "error");
+          return;
+        }
+        setProgressStatus("saved");
+      } catch {
+        setProgressStatus("error");
+      }
+    })();
+  }, [accuracy, completedWords, game.mistakes, phase, settings.difficulty, songId, totalHiddenWords]);
+
   // ---------- Round controls ----------
 
   function startRound(nextPosition: number, activeSettings: GameSettings = settings) {
     const entry = playable[nextPosition];
     if (!entry) return;
     fadeStartedRoundRef.current = null;
+    activeMistakeRef.current = null;
+    setConsecutiveMistakes(0);
     setPosition(nextPosition);
     setRound(buildRound(entry.index, entry.line.text, activeSettings, wordPool));
   }
@@ -228,6 +277,8 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   function startGame() {
     if (playable.length === 0) return;
     dispatch({ type: "reset" });
+    progressSavedRef.current = false;
+    setProgressStatus("idle");
     startRound(0);
     setPhase("playing");
     onPause?.();
@@ -257,6 +308,8 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     handledStartRequestRef.current = startRequest;
     queueMicrotask(() => {
       dispatch({ type: "reset" });
+      progressSavedRef.current = false;
+      setProgressStatus("idle");
       startRound(startPosition);
       setPhase("playing");
       onPlayLine?.(playable[startPosition].line.start);
@@ -286,7 +339,10 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   // ---------- Answer handling ----------
 
   function registerCorrect(tokenId: number, bankItemId?: string) {
-    dispatch({ type: "correct" });
+    const wordKey = `${round?.lineIndex ?? ""}:${tokenId}`;
+    dispatch({ type: "correct", wordKey });
+    activeMistakeRef.current = null;
+    setConsecutiveMistakes(0);
     const hiddenCount = round?.tokens.filter((token) => token.hidden).length ?? 0;
     if (round && round.filledIds.length + 1 >= hiddenCount && phase === "playing" && fadeStartedRoundRef.current === round) {
       const nextEntry = playable[position + 1];
@@ -305,9 +361,33 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     );
   }
 
-  function registerWrong() {
-    dispatch({ type: "wrong" }); // Reset the streak.
+  function registerWrong(token: WordToken) {
+    dispatch({ type: "wrong" });
     setShakeKey((key) => key + 1); // Trigger the shake animation.
+    const wordKey = `${round?.lineIndex ?? ""}:${token.id}`;
+    const count = activeMistakeRef.current?.wordKey === wordKey
+      ? activeMistakeRef.current.count + 1
+      : 1;
+    activeMistakeRef.current = { wordKey, count };
+    setConsecutiveMistakes(count);
+    if (count < 3 || !round) return;
+
+    dispatch({ type: "revealed", wordKey });
+    setRound((previous) => previous && previous.lineIndex === round.lineIndex
+      ? {
+          ...previous,
+          filledIds: [...previous.filledIds, token.id],
+          revealedIds: [...previous.revealedIds, token.id],
+        }
+      : previous);
+    activeMistakeRef.current = null;
+    setConsecutiveMistakes(0);
+
+    const hiddenCount = round.tokens.filter((item) => item.hidden).length;
+    if (round.filledIds.length + 1 >= hiddenCount && phase === "playing" && fadeStartedRoundRef.current === round) {
+      const nextEntry = playable[position + 1];
+      if (nextEntry) onPlayLine?.(nextEntry.line.start);
+    }
   }
 
   /** Fill-in mode: the selected word must match the next blank. */
@@ -316,7 +396,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     if (sameWord(item.text, nextBlank.core)) {
       registerCorrect(nextBlank.id, item.id);
     } else {
-      registerWrong();
+      registerWrong(nextBlank);
     }
   }
 
@@ -326,7 +406,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     if (normalizeLetter(letter) === normalizeLetter(firstLetterOf(nextBlank))) {
       registerCorrect(nextBlank.id);
     } else {
-      registerWrong();
+      registerWrong(nextBlank);
     }
   }
 
@@ -441,31 +521,17 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   // SCREEN 3: results.
   // =====================================================================
   if (phase === "finished") {
-    const answers = game.correct + game.mistakes;
-    const accuracy = answers === 0 ? 0 : Math.round((game.correct / answers) * 100);
-
     return (
-      <section className="space-y-5 rounded-xl border bg-card p-5">
-        <h2 className="text-lg font-semibold">{t("game.results")}</h2>
-        <ScoreBoard
-          score={game.score}
-          streak={game.streak}
-          maxStreak={game.maxStreak}
-          multiplier={game.multiplier}
-        />
-        <p className="text-sm text-muted-foreground">
-          {t("game.accuracy")}: <span className="font-medium text-foreground">{accuracy}%</span>
-        </p>
-        <div className="flex gap-2">
-          <Button type="button" onClick={startGame}>
-            <RotateCcw className="size-4" />
-            {t("game.playAgain")}
-          </Button>
-          <Button type="button" variant="outline" onClick={quitToSetup}>
-            {t("game.quit")}
-          </Button>
-        </div>
-      </section>
+      <GameCompletionModal
+        accuracy={accuracy}
+        wordsCompleted={completedWords}
+        totalWords={totalHiddenWords}
+        mistakesCount={game.mistakes}
+        isCompleted={accuracy >= 80}
+        progressStatus={progressStatus}
+        onPlayAgain={startGame}
+        onExit={quitToSetup}
+      />
     );
   }
 
@@ -476,12 +542,33 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
 
   return (
     <section className="space-y-4">
-      <ScoreBoard
-        score={game.score}
-        streak={game.streak}
-        maxStreak={game.maxStreak}
-        multiplier={game.multiplier}
-      />
+      <div className="flex w-full items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900/80 p-2.5 px-4 text-sm text-neutral-100">
+        <span className="shrink-0">🎯 {t("game.accuracy")}: <strong className="tabular-nums">{accuracy}%</strong></span>
+        <div
+          role="progressbar"
+          aria-label={t("game.wordProgress")}
+          aria-valuemin={0}
+          aria-valuemax={totalHiddenWords}
+          aria-valuenow={completedWords}
+          className="mx-1 min-w-20 flex-1 overflow-hidden rounded-full"
+          style={{ flex: "1 1 8rem", height: "8px", backgroundColor: "#262626" }}
+        >
+          <div
+            className="block rounded-full transition-all duration-300"
+            style={{ width: `${progressPercent}%`, height: "100%", backgroundColor: "#10b981" }}
+          />
+        </div>
+        <span className="shrink-0">✍️ {t("game.words")}: <strong className="tabular-nums">{completedWords} / {totalHiddenWords}</strong></span>
+      </div>
+      {nextBlank && (
+        <div role="img" className="flex justify-end" aria-label={t("game.mistakesRemaining", { count: 3 - activeWordMistakes })}>
+          <span className="flex gap-1" aria-hidden="true">
+            {[0, 1, 2].map((index) => (
+              <span key={index} className={`size-2 rounded-full ${index < activeWordMistakes ? "bg-red-500" : "bg-neutral-400/40"}`} />
+            ))}
+          </span>
+        </div>
+      )}
 
       <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
         {onPlayLine && (
@@ -520,10 +607,11 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
 
             // 2) This word was guessed; show it with its punctuation.
             if (round.filledIds.includes(token.id)) {
+              const revealed = round.revealedIds.includes(token.id);
               return (
                 <span
                   key={token.id}
-                  className="font-semibold text-emerald-700 duration-200 animate-in zoom-in-90 dark:text-emerald-300"
+                  className={`font-semibold duration-200 animate-in zoom-in-90 ${revealed ? "text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"}`}
                 >
                   {token.raw}
                 </span>
@@ -553,7 +641,11 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
 
       {/* Bottom floating panel for AI actions or the word bank. */}
       <div className="sticky bottom-3 z-10 space-y-2">
-        {explanationStatus === "loading" && <ExplanationSkeleton />}
+        {explanationStatus === "loading" && (
+          partialExplanation
+            ? <StreamingExplanation data={partialExplanation} />
+            : <ExplanationSkeleton />
+        )}
         {explanationStatus === "error" && <p role="alert" className="text-sm text-destructive">{explanationError}</p>}
         {explanationStatus === "open" && remoteExplanation && currentLine && (
           <ExplanationCard

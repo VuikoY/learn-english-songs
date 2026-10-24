@@ -164,5 +164,5 @@ export function buildRound(
     bank = shuffle([...real, ...fake]);
   }
 
-  return { lineIndex, tokens, bank, filledIds: [] };
+  return { lineIndex, tokens, bank, filledIds: [], revealedIds: [] };
 }

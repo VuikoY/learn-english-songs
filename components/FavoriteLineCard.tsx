@@ -6,21 +6,24 @@ import Link from "next/link";
 import Image from "next/image";
 import { BookOpen, Loader2, Play, Sparkles, X } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
-import ExplanationCard from "@/components/ExplanationCard";
+import ExplanationCard, { StreamingExplanation } from "@/components/ExplanationCard";
 import { ExplanationSkeleton } from "@/components/ExplanationCard";
 import type { Explanation } from "@/lib/types";
+import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 
 type Player = { getPlayerState: () => number; getCurrentTime: () => number; pauseVideo: () => void; seekTo: (seconds: number, allowSeekAhead: boolean) => void; playVideo: () => void };
 type Props = { line: { id: string; line_index: number; line_text: string; start_time: number; end_time: number; songs: { youtube_id: string; title: string; thumbnail_url: string | null } } };
 
 export default function FavoriteLineCard({ line }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const streamExplanation = useStreamingExplanation();
   const player = useRef<Player | null>(null);
   const [playing, setPlaying] = useState(false);
   const [explainOpen, setExplainOpen] = useState(false);
   const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [explainError, setExplainError] = useState("");
   const [explainLoading, setExplainLoading] = useState(false);
+  const [partialExplanation, setPartialExplanation] = useState<Partial<Explanation> | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -37,16 +40,14 @@ export default function FavoriteLineCard({ line }: Props) {
     setExplainOpen(true);
     setExplainError("");
     if (explanation) return;
+    setPartialExplanation(null);
     setExplainLoading(true);
     try {
-      const response = await fetch("/api/explain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: line.line_text, youtubeId: line.songs.youtube_id, lineIndex: line.line_index, sourceLanguage, targetLanguage }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok || !result || typeof result !== "object" || !("translation" in result) || !("grammar" in result) || !("slang" in result)) throw new Error(t("explain.requestError"));
-      setExplanation(result as Explanation);
+      const result = await streamExplanation(
+        { text: line.line_text, youtubeId: line.songs.youtube_id, lineIndex: line.line_index, sourceLanguage, targetLanguage },
+        setPartialExplanation,
+      );
+      setExplanation(result);
     } catch (error) { setExplainError(error instanceof Error ? error.message : t("explain.unknownError")); }
     finally { setExplainLoading(false); }
   }
@@ -66,6 +67,6 @@ export default function FavoriteLineCard({ line }: Props) {
       </div>
     </article>
     </div>
-    {explainOpen && <div role="dialog" aria-modal="true" aria-label={t("explain.button")} className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setExplainOpen(false)}><section className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl border bg-background p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex justify-end"><button type="button" aria-label={t("favorites.close")} onClick={() => setExplainOpen(false)}><X className="size-5"/></button></div><blockquote className="mb-4 text-lg font-medium">{line.line_text}</blockquote>{explainLoading ? <ExplanationSkeleton/> : explainError ? <p role="alert" className="text-sm text-destructive">{explainError}</p> : explanation ? <ExplanationCard data={explanation}/> : <Loader2 className="size-5 animate-spin"/>}</section></div>}
+    {explainOpen && <div role="dialog" aria-modal="true" aria-label={t("explain.button")} className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setExplainOpen(false)}><section className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl border bg-background p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex justify-end"><button type="button" aria-label={t("favorites.close")} onClick={() => setExplainOpen(false)}><X className="size-5"/></button></div><blockquote className="mb-4 text-lg font-medium">{line.line_text}</blockquote>{explainLoading ? partialExplanation ? <StreamingExplanation data={partialExplanation}/> : <ExplanationSkeleton/> : explainError ? <p role="alert" className="text-sm text-destructive">{explainError}</p> : explanation ? <ExplanationCard data={explanation}/> : <Loader2 className="size-5 animate-spin"/>}</section></div>}
   </>;
 }

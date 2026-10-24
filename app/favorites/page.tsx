@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { CatalogSong } from "@/components/SongCatalog";
 import { songMetadataLabels } from "@/lib/songMetadata";
+import { fetchMediaCompletion } from "@/lib/mediaProgress";
 
 const GUEST_FAVORITES_KEY = "lingo-clips:favorites:v1";
 const FAVORITES_CHANGED = "lingo-clips:favorites-changed";
@@ -49,7 +50,18 @@ export default function FavoritesPage() {
       const { data, error } = await db.from("songs").select("id,youtube_id,title,thumbnail_url,language,genre,difficulty,content_type").in("id", ids);
       if (error) throw error;
       const byId = new Map(((data ?? []) as unknown as CatalogSong[]).map(song => [song.id, song]));
-      setSongs(ids.map(id => byId.get(id)).filter((song): song is CatalogSong => Boolean(song)));
+      const favoriteSongs = ids.map(id => byId.get(id)).filter((song): song is CatalogSong => Boolean(song));
+      try {
+        const completion = await fetchMediaCompletion(db, userId, favoriteSongs.map((song) => song.id));
+        setSongs(favoriteSongs.map((song) => ({
+          ...song,
+          isCompleted: completion[song.id]?.isCompleted ?? false,
+          completedDifficulty: completion[song.id]?.completedDifficulty ?? null,
+        })));
+      } catch (progressError) {
+        console.error("[favorites] Could not load completion badges.", progressError);
+        setSongs(favoriteSongs);
+      }
     } catch {
       setSongs([]);
       setFavoriteLines([]);

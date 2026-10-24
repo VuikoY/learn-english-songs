@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import SongCatalog, { type CatalogSong } from "@/components/SongCatalog";
+import { fetchMediaCompletion } from "@/lib/mediaProgress";
 
 export default async function CatalogPage() {
   const supabase = await createSupabaseServerClient();
@@ -13,6 +14,22 @@ export default async function CatalogPage() {
       songs = (legacy.data ?? []).map((song) => ({ ...song, genre: "other" as const, difficulty: "intermediate" as const, content_type: "music_video" as const }));
     } else {
       songs = (data ?? []) as unknown as CatalogSong[];
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) {
+      console.error("[catalog] Could not identify current user for completion badges.", authError);
+    } else if (user && !user.is_anonymous && songs.length) {
+      try {
+        const completion = await fetchMediaCompletion(supabase, user.id, songs.map((song) => song.id));
+        songs = songs.map((song) => ({
+          ...song,
+          isCompleted: completion[song.id]?.isCompleted ?? false,
+          completedDifficulty: completion[song.id]?.completedDifficulty ?? null,
+        }));
+      } catch (progressError) {
+        console.error("[catalog] Could not load server-rendered completion badges.", progressError);
+      }
     }
   }
   return <SongCatalog songs={songs} />;

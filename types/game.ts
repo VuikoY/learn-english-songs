@@ -13,7 +13,7 @@ export type LanguageInfo = {
   code: Language;
   label: string; // Short label displayed in the UI.
   nativeName: string; // Language name in that language.
-  englishName: string; // English name used in Gemini prompts.
+  englishName: string; // English name used in language-learning prompts.
 };
 
 export const LANGUAGES: Record<Language, LanguageInfo> = {
@@ -62,19 +62,18 @@ export type GameSettings = {
   difficulty: Difficulty;
 };
 
-/** Score multiplier based on the current streak. */
-export type Multiplier = 1 | 1.5 | 2;
-
 export interface GameState {
-  score: number;
-  streak: number; // Consecutive correct answers.
-  maxStreak: number;
-  multiplier: Multiplier;
-  correct: number; // Total correct answers.
-  mistakes: number; // Total mistakes.
+  wordsCompleted: number;
+  completedWordKeys: string[];
+  correct: number;
+  mistakes: number;
 }
 
-export type GameAction = { type: "correct" } | { type: "wrong" } | { type: "reset" };
+export type GameAction =
+  | { type: "correct"; wordKey: string }
+  | { type: "revealed"; wordKey: string }
+  | { type: "wrong" }
+  | { type: "reset" };
 
 /** A line token with punctuation separated from the word itself. */
 export interface WordToken {
@@ -100,4 +99,5 @@ export interface Round {
   tokens: WordToken[];
   bank: BankItem[]; // Empty in first-letter mode.
   filledIds: number[]; // IDs of words already revealed.
+  revealedIds: number[]; // Filled automatically after repeated mistakes.
 }
