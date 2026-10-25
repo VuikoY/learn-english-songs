@@ -1,8 +1,17 @@
+import { Suspense } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import SongCatalog, { type CatalogSong } from "@/components/SongCatalog";
 import { fetchMediaCompletion } from "@/lib/mediaProgress";
 
-export default async function CatalogPage() {
+export default function CatalogPage() {
+  return (
+    <Suspense fallback={<main className="mx-auto w-full max-w-6xl py-8" aria-busy="true" />}>
+      <CatalogPageContent />
+    </Suspense>
+  );
+}
+
+async function CatalogPageContent() {
   const supabase = await createSupabaseServerClient();
   let songs: CatalogSong[] = [];
   if (supabase) {
