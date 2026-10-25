@@ -5,7 +5,7 @@ Next.js app for learning English through song subtitles, line explanations, voca
 ## Local setup
 
 1. Use Node.js 20+ and run `npm install`.
-2. Copy `.env.example` to `.env.local` and fill in the Supabase project URL, public anon/publishable key, server-only service-role key and Gemini API key. Explanations use the `gemini-3.8-flash` model. `MOCK_AI=true` enables demo explanations without Gemini. `SUPABASE_SERVICE_ROLE_KEY` is used only by server routes; never expose it through a `NEXT_PUBLIC_` variable or browser code. Uncached transcripts are retrieved with the `youtube-transcript` library and cached in Supabase.
+2. Copy `.env.example` to `.env.local` and fill in the Supabase project URL, public anon/publishable key, server-only service-role key, Gemini API key and YouTube Data API key. Explanations use the `gemini-3.8-flash` model. `MOCK_AI=true` enables demo explanations without Gemini. `SUPABASE_SERVICE_ROLE_KEY` and `YOUTUBE_DATA_API_KEY` are used only by server routes; never expose them through a `NEXT_PUBLIC_` variable or browser code. Restrict the YouTube key to the YouTube Data API. Song search uses one YouTube Data API search request per query (100 quota units); it checks subtitles for up to five matching videos with the existing `youtube-transcript` library. Uncached transcripts are retrieved with that library; transcripts are cached in Supabase only after an authenticated user confirms them.
 3. Apply the ordered migrations in `supabase/migrations` to your Supabase project (for example, link the project with `npx supabase link` and run `npx supabase db push`). `supabase/schema.sql` is a legacy pointer; database changes are managed by migrations.
 4. In Supabase Authentication, enable Google and Email/Password, and allow email signups if users should be able to register. The app has separate email/password sign-in and registration actions. With email confirmation enabled, users receive a confirmation link; otherwise Supabase can create a session immediately. Users who signed in with Google or a previous magic link can use “Встановити або відновити пароль” to set a password through Supabase password recovery. Add `http://localhost:3000/auth/callback` and your deployed `https://<domain>/auth/callback` to the allowed redirect URLs; set the site URL to the production origin.
 5. Start with `npm run dev`.
@@ -24,6 +24,7 @@ The browser uses only the Supabase public anon/publishable key. Never put a `ser
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (server-only; never use a `NEXT_PUBLIC_` prefix)
    - `GEMINI_API_KEY`
+   - `YOUTUBE_DATA_API_KEY` (server-only; restrict it to the YouTube Data API)
    - `MOCK_AI=false`
 3. Apply the database migrations as described below. Migrations run against Supabase separately from the Vercel app deployment.
 4. In Supabase Auth, configure Google OAuth and email delivery as needed. Set the Site URL to the production origin and add the production site's `/auth/callback` URL to the allowed redirect URLs. Add preview callback URLs only if you use preview deployments for authentication.

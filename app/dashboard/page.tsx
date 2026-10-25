@@ -14,6 +14,7 @@ import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/co
 import type { Explanation } from "@/lib/types";
 import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
+import SongSearch from "@/components/SongSearch";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; transcripts?: SongTranscript | SongTranscript[] | null };
@@ -128,7 +129,7 @@ export default function DashboardPage() {
   }
 
   if (loading) return <main className="mx-auto max-w-5xl p-8">{text.loading}</main>;
-  if (!userId) return <main className="mx-auto max-w-5xl p-8"><h1 className="text-2xl font-bold">{text.mySongs}</h1><p className="mt-3">{text.loginPrompt}</p><Link className="mt-3 inline-block text-primary underline" href="/auth">{text.login}</Link></main>;
+  if (!userId) return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10"><SongSearch /><section><h1 className="text-2xl font-bold">{text.mySongs}</h1><p className="mt-3">{text.loginPrompt}</p><Link className="mt-3 inline-block text-primary underline" href="/auth">{text.login}</Link></section></main>;
 
   return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10">
     <section>
@@ -151,6 +152,7 @@ export default function DashboardPage() {
         </div>
       )}
     </section>
+    <SongSearch />
     <section><h1 className="text-3xl font-bold">{text.mySongs}</h1><div className="mt-5 grid gap-3 rounded-xl border p-5">
       <h2 className="text-xl font-semibold">{text.addYoutube}</h2>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><input className="min-w-0 flex-1 rounded border bg-background px-3 py-2" placeholder={text.youtubeUrl} value={url} onChange={event => setUrl(stripYoutubeUrlExtras(event.target.value))}/><label className="grid gap-1 text-sm"><span>{t("favorites.category")}</span><select aria-label={t("favorites.category")} className="rounded border bg-background px-3 py-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex shrink-0 items-center gap-2 text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><button disabled={busy||!url} onClick={fetchPreview} className="shrink-0 rounded border px-4 py-2 disabled:opacity-50">{text.loadSubtitles}</button></div>
@@ -256,7 +258,7 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
                 <div className="flex min-w-0 items-center gap-1">
                   <div className="flex w-fit shrink-0 items-center gap-1">
                     <button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-xs hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("dashboard.seekToLine")} ${index + 1}`} onClick={() => { autoPausedLineRef.current = null; playerRef.current?.seekTo(line.start); playerRef.current?.play(); }}>▶</button>
-                    <input aria-label={t("dashboard.start")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.start} onChange={event => onLinesChange(lines.map((item, i) => i === index ? { ...item, start: Number(event.target.value) } : item))} />
+                    <input aria-label={t("dashboard.start")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={line.start} onChange={event => onLinesChange(updateLineStart(lines, index, Number(event.target.value)))} />
                   </div>
                   <input aria-label={`${t("dashboard.lyrics")} ${index + 1}`} className="h-8 min-w-0 flex-1 rounded border bg-background px-2" value={line.text} onChange={event => onLinesChange(lines.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />
                   <div className="flex w-fit shrink-0 flex-nowrap gap-1">
@@ -317,4 +319,20 @@ function mergeShortLines(lines: LyricLine[]): LyricLine[] {
 
 function countWords(text: string) {
   return text.trim().split(/\s+/u).filter(Boolean).length;
+}
+
+function updateLineStart(lines: LyricLine[], index: number, start: number): LyricLine[] {
+  const updated = lines.map((line, lineIndex) => lineIndex === index ? { ...line, start } : line);
+  const durationBefore = index - 1;
+  const durationAfter = index;
+
+  for (const lineIndex of [durationBefore, durationAfter]) {
+    if (lineIndex < 0 || lineIndex >= updated.length - 1) continue;
+    updated[lineIndex] = {
+      ...updated[lineIndex],
+      duration: Math.max(0, Number((updated[lineIndex + 1].start - updated[lineIndex].start - 0.1).toFixed(2))),
+    };
+  }
+
+  return updated;
 }
