@@ -54,11 +54,10 @@ export const HIDE_RATIO: Record<Difficulty, number> = {
 
 // ============================== GAME ==============================
 
-export type GameModeId = "fill-blanks" | "first-letter";
 export type GamePhase = "setup" | "playing" | "finished";
 
 export type GameSettings = {
-  mode: GameModeId;
+  mode: "fill-blanks" | "first-letter";
   difficulty: Difficulty;
 };
 

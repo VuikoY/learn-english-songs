@@ -38,7 +38,7 @@ function Section({ icon: Icon, title, accent, streaming = false, children }: Sec
 
 // ---------- Three sections without a surrounding card, used in chat and vocabulary ----------
 
-export function ExplanationSections({ data, streaming = false }: { data: Partial<Explanation>; streaming?: boolean }) {
+function ExplanationSections({ data, streaming = false }: { data: Partial<Explanation>; streaming?: boolean }) {
   const { t } = useLanguage();
   const activeField = streaming
     ? data.slang !== undefined

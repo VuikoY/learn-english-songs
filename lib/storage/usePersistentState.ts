@@ -47,13 +47,3 @@ export function usePersistentState<T>(
 
   return [value, setValue];
 }
-
-/** Keeps at most max recent entries so the cache stays bounded. */
-export function capEntries<V>(record: Record<string, V>, max: number): Record<string, V> {
-  const keys = Object.keys(record);
-  if (keys.length <= max) return record;
-
-  const trimmed: Record<string, V> = {};
-  for (const k of keys.slice(keys.length - max)) trimmed[k] = record[k];
-  return trimmed;
-}

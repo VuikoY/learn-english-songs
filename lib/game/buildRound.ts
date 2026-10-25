@@ -22,7 +22,7 @@ import {
 // Tokens are split on whitespace above, so dotAll is unnecessary here.
 const WORD_PARTS = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u;
 
-export function tokenizeLine(text: string): WordToken[] {
+function tokenizeLine(text: string): WordToken[] {
   return text
     .split(/\s+/)
     .filter(Boolean)
@@ -40,7 +40,7 @@ export function tokenizeLine(text: string): WordToken[] {
 }
 
 /** Only hide words that start with a letter, not tokens such as "***" or "2am". */
-export function isHideable(token: WordToken): boolean {
+function isHideable(token: WordToken): boolean {
   return /^\p{L}/u.test(token.core);
 }
 
@@ -94,7 +94,7 @@ function shuffle<T>(items: readonly T[]): T[] {
  * - medium: 35%, chosen at random
  * At least one word is always hidden.
  */
-export function pickHiddenIds(tokens: WordToken[], difficulty: Difficulty): Set<number> {
+function pickHiddenIds(tokens: WordToken[], difficulty: Difficulty): Set<number> {
   const candidates = tokens.filter(isHideable);
   const ratio = HIDE_RATIO[difficulty];
 

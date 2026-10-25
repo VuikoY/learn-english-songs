@@ -1,3 +1,3 @@
 # Project instructions
 
-After making code changes, run `npm run lint` as the final validation step. If it fails, report the relevant failures; do not claim the lint check passed.
+Before any push, run `npm run lint` and `npm run knip`. Do not push while either command reports errors; fix the reported issues, rerun both checks, and push only after both pass. If a check fails, report the relevant failures and do not claim it passed.

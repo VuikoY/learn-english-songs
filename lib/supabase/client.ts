@@ -14,8 +14,3 @@ export function getSupabaseBrowserClient(): SupabaseClient<Database> | null {
   browserClient ??= createBrowserClient<Database>(url, key);
   return browserClient;
 }
-
-/** Returns the configured browser client. Personal rows require a real signed-in user. */
-export async function getSupabaseUserClient(): Promise<SupabaseClient | null> {
-  return getSupabaseBrowserClient();
-}

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 
-export type CompletedDifficulty = "Easy" | "Medium" | "Hard";
+type CompletedDifficulty = "Easy" | "Medium" | "Hard";
 export type MediaCompletion = {
   isCompleted: boolean;
   completedDifficulty: CompletedDifficulty | null;

@@ -34,7 +34,7 @@ const NAMED_ENTITIES: Record<string, string> = {
  * Converts "&amp;", "&#39;", "&#x27;", and "&quot;" to their plain characters.
  * Multiple passes handle values that YouTube has encoded more than once.
  */
-export function decodeHtmlEntities(input: string): string {
+function decodeHtmlEntities(input: string): string {
   let current = input;
 
   for (let pass = 0; pass < 3; pass++) {
@@ -94,7 +94,7 @@ function isSoundCue(content: string): boolean {
 // 3. Main function for one transcript line.
 // ---------------------------------------------------------------------------
 
-export function cleanTranscriptLine(input: string): string {
+function cleanTranscriptLine(input: string): string {
   const decoded = decodeHtmlEntities(input).normalize("NFC");
 
   let text = decoded
