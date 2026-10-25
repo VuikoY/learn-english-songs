@@ -16,15 +16,45 @@ The browser uses only the Supabase public anon/publishable key. Never put a `ser
 
 ## Deploy to Vercel
 
-Import this repository into Vercel with the Next.js defaults. Configure these environment variables for Production (and Preview/Development if needed):
+### One-time setup
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (server-only; used for shared explanation caching and transcript confirmation; never use a `NEXT_PUBLIC_` prefix)
-- `GEMINI_API_KEY`
-- `MOCK_AI=false`
+1. Import this GitHub repository into Vercel and keep the detected Next.js build settings. Set the Production Branch to the branch you deploy from (usually `main`).
+2. In Vercel Project Settings → Environment Variables, add the following for Production. Add them for Preview too if preview deployments need access to the real services:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only; never use a `NEXT_PUBLIC_` prefix)
+   - `GEMINI_API_KEY`
+   - `MOCK_AI=false`
+3. Apply the database migrations as described below. Migrations run against Supabase separately from the Vercel app deployment.
+4. In Supabase Auth, configure Google OAuth and email delivery as needed. Set the Site URL to the production origin and add the production site's `/auth/callback` URL to the allowed redirect URLs. Add preview callback URLs only if you use preview deployments for authentication.
+5. After changing Vercel environment variables, trigger a new deployment so the build picks them up.
 
-Apply the ordered SQL migrations, configure Google OAuth credentials and email delivery in Supabase, then add the Vercel production and preview callback URLs to Supabase Auth URL Configuration. Redeploy after setting environment variables. The deployment requires access to the owner's Supabase and Vercel accounts; these are not configured by the repository.
+### Deploying changes
+
+Before pushing, run `npm run lint` and `npm run build` locally. Push or merge the change to the configured Production Branch; Vercel builds and deploys it automatically. Pushes to other branches create Preview deployments. Check the deployment's build logs and open its URL to verify the app. If a deployment fails, fix the reported issue and push again, or redeploy the commit from the Vercel dashboard.
+
+Keep secrets in Vercel's environment-variable settings and out of Git; `.env.local` is for local development only. Deployment requires access to the project's Vercel and Supabase accounts.
+
+### Applying database migrations
+
+Install and authenticate the Supabase CLI, then link this repository to the intended Supabase project:
+
+```bash
+npx supabase login
+npx supabase link --project-ref <project-ref>
+npx supabase migration list
+```
+
+Check that the project reference is correct and compare local and remote migration history before proceeding. Preview pending changes, then apply them:
+
+```bash
+npx supabase db push --dry-run
+npx supabase db push
+```
+
+The CLI may ask for the database password. Do not put database passwords, access tokens, or other secrets in Git or share them in chat. Review every pending migration before applying it to production. In particular, `20261019120000_remove_song_artist.sql` drops the `artist` column from `public.songs`, which deletes any data stored in that column. Back up or migrate that data first if it needs to be kept.
+
+Migrations are currently run manually; deploying the Next.js app through Vercel does not apply them. After a successful push, check the Supabase migration history and verify the deployed app. Do not configure automatic production migration runs until pending SQL changes and any destructive operations have been reviewed.
 
 ## Commands
 
