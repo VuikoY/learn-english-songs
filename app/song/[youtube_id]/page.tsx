@@ -36,7 +36,6 @@ function SongPageContent() {
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
   const [gameProgress, setGameProgress] = useState({ current: 0, total: 0 });
   const [gameStartRequest, setGameStartRequest] = useState(0);
-  const [songTitle, setSongTitle] = useState<string | null>(null);
   const [songDbId, setSongDbId] = useState<string | null>(null);
   const [view, setView] = usePersistentState<View>(
     "lingo-clips:active-view",
@@ -146,18 +145,12 @@ function SongPageContent() {
     }, 50);
   }, [clearVolumeFade]);
 
-  function showVideo(id: string, newLines: LyricLine[], savedTitle?: string) {
+  function showVideo(id: string, newLines: LyricLine[]) {
     setSongDbId(null);
     setVideoId(id);
     setLines(newLines);
     setCurrentTime(0);
     setHasPlaybackStarted(false);
-    setSongTitle(savedTitle ?? null);
-    if (savedTitle !== undefined) return;
-    fetch(`/api/video-title?videoId=${id}`)
-      .then((res) => res.json())
-      .then((data: { title: string | null }) => setSongTitle(data.title ?? null))
-      .catch(() => {});
   }
 
   async function handleLoad(id: string) {
@@ -178,7 +171,7 @@ function SongPageContent() {
           if (!transcript || !Array.isArray(transcript.lines_json)) {
             throw new Error(t("home.loadError"));
           }
-          showVideo(id, transcript.lines_json as unknown as LyricLine[], song.title);
+          showVideo(id, transcript.lines_json as unknown as LyricLine[]);
           setSongDbId(song.id);
           return;
         }
@@ -277,7 +270,7 @@ function SongPageContent() {
           />
         </div>
         <div className={view === "play" ? "" : "hidden"}>
-          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} songTitle={songTitle} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAfterFade={fadeOutAndPause} onPause={pausePlayer} />
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAfterFade={fadeOutAndPause} onPause={pausePlayer} />
         </div>
       </div>
     </main>

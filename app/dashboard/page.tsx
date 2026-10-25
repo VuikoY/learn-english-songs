@@ -39,7 +39,7 @@ export default function DashboardPage() {
   const [message, setMessage] = useState("");
   const previewVideoId = extractVideoId(url);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const db = getSupabaseBrowserClient();
     if (!db) {
       setLearningStatsError(true);
@@ -88,8 +88,8 @@ export default function DashboardPage() {
         : 0,
     });
     setLearningStatsError(false);
-  }
-  useEffect(() => { void refresh(); }, [userId]);
+  }, [userId]);
+  useEffect(() => { void Promise.resolve().then(refresh); }, [refresh]);
 
   async function fetchPreview() {
     setBusy(true); setMessage("");
@@ -169,8 +169,8 @@ function SongEditor({ song, onSave, text, uiLanguage }: { song: Song; onSave: (s
   const transcript = Array.isArray(song.transcripts) ? song.transcripts[0] : song.transcripts;
   const [lines,setLines]=useState(transcript?.lines_json??[]); const [isPublic,setIsPublic]=useState(song.is_public); const [open,setOpen]=useState(false); const [saving,setSaving]=useState(false);
   const [genre,setGenre]=useState(song.genre); const [difficulty,setDifficulty]=useState(song.difficulty); const [contentType,setContentType]=useState(song.content_type); const labels=songMetadataLabels(uiLanguage);
-  useEffect(() => { setLines(transcript?.lines_json ?? []); }, [song.id, transcript]);
-  useEffect(() => { setGenre(song.genre); setDifficulty(song.difficulty); }, [song.genre, song.difficulty]);
+  useEffect(() => { queueMicrotask(() => setLines(transcript?.lines_json ?? [])); }, [song.id, transcript]);
+  useEffect(() => { queueMicrotask(() => { setGenre(song.genre); setDifficulty(song.difficulty); }); }, [song.genre, song.difficulty]);
   async function handleSave() {
     if (saving) return;
     setSaving(true);

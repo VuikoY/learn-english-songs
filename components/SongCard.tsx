@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import FavoriteButton from "@/components/FavoriteButton";
 import type { CatalogSong } from "@/components/SongCatalog";
 import type { songMetadataLabels } from "@/lib/songMetadata";
@@ -15,7 +16,7 @@ export default function SongCard({ song, labels }: { song: CatalogSong; labels: 
   return <article className="overflow-hidden rounded-xl border bg-card shadow-sm">
     <Link href={`/song/${song.youtube_id}`}>
       <div className="relative aspect-video overflow-hidden rounded-t-lg">
-        <img src={song.thumbnail_url || `https://i.ytimg.com/vi/${song.youtube_id}/hqdefault.jpg`} alt="" className="h-full w-full object-cover" />
+        <Image src={song.thumbnail_url || `https://i.ytimg.com/vi/${song.youtube_id}/hqdefault.jpg`} alt="" width={480} height={360} unoptimized className="h-full w-full object-cover" />
         {song.isCompleted && (
           <div
             className="absolute right-2.5 top-2.5 z-10 flex items-center gap-1.5 rounded-full border border-neutral-700/60 bg-black/70 px-2.5 py-1 shadow-lg backdrop-blur-md"

@@ -59,7 +59,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authLoading) return;
     let active = true;
-    setCloudWritableUserId(null);
+    queueMicrotask(() => {
+      if (active) setCloudWritableUserId(null);
+    });
     const hydrate = async () => {
       if (!userId) {
         let guest = DEFAULT_SETTINGS;

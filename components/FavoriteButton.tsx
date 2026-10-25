@@ -41,7 +41,7 @@ export default function FavoriteButton({ songId, compact = false }: { songId: st
   }, [authLoading, songId, userId]);
 
   useEffect(() => {
-    void refresh();
+    void Promise.resolve().then(refresh);
     if (userId) return;
     const sync = () => setFavorite(readGuestFavorites().includes(songId));
     window.addEventListener(FAVORITES_CHANGED, sync);

@@ -2,7 +2,7 @@
 // Main game flow: mode and difficulty selection, song-line rounds, and results.
 "use client";
 
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -50,7 +50,6 @@ type Props = {
   /** Starts a one-second fade out and pauses playback. */
   onPauseAfterFade?: () => void;
   onPause?: () => void;
-  songTitle?: string | null;
   settings: GameSettings;
   onDifficultyChange: (difficulty: Difficulty) => void;
   onProgressChange: (current: number, total: number) => void;
@@ -62,7 +61,7 @@ type Props = {
 
 // Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
-export default function GameMode({ lines, currentTime, youtubeId, songId, onPlayLine, onPauseAfterFade, onPause, songTitle = null, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, songId, onPlayLine, onPauseAfterFade, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const streamExplanation = useStreamingExplanation();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
@@ -78,7 +77,6 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   const [consecutiveMistakes, setConsecutiveMistakes] = useState(0);
   const [progressStatus, setProgressStatus] = useState<"idle" | "saving" | "saved" | "error" | "sign-in">("idle");
   const fadeStartedRoundRef = useRef<Round | null>(null);
-  const activeMistakeRef = useRef<{ wordKey: string; count: number } | null>(null);
   const progressSavedRef = useRef(false);
   const [shakeKey, setShakeKey] = useState(0); // Increment to trigger the error shake animation.
 
@@ -114,12 +112,18 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
 
   // Derived values are calculated during render rather than stored in state.
   const nextBlank = round?.tokens.find((tok) => tok.hidden && !round.filledIds.includes(tok.id));
-  const activeWordKey = round && nextBlank ? `${round.lineIndex}:${nextBlank.id}` : null;
-  const activeWordMistakes = activeWordKey && activeMistakeRef.current?.wordKey === activeWordKey
-    ? consecutiveMistakes
-    : 0;
+  const activeWordMistakes = consecutiveMistakes;
   const isRoundComplete = round !== null && nextBlank === undefined;
   const currentLine = round ? lines[round.lineIndex] : null;
+
+  const startRound = useCallback((nextPosition: number, activeSettings: GameSettings = settings) => {
+    const entry = playable[nextPosition];
+    if (!entry) return;
+    fadeStartedRoundRef.current = null;
+    setConsecutiveMistakes(0);
+    setPosition(nextPosition);
+    setRound(buildRound(entry.index, entry.line.text, activeSettings, wordPool));
+  }, [playable, settings, wordPool]);
 
   // Apply a changed mode to the same active lyric line without advancing or seeking.
   useEffect(() => {
@@ -131,7 +135,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
         return line ? buildRound(previous.lineIndex, line.text, settings, wordPool) : previous;
       });
     });
-  }, [phase, settings.mode, settings.difficulty, lines, wordPool]);
+  }, [phase, settings, lines, wordPool]);
   const explainKey = currentLine ? `${sourceLanguage}>${targetLanguage}::${currentLine.text.trim().toLowerCase()}` : "";
   const explanationLineKey = `${youtubeId ?? ""}:${round?.lineIndex ?? ""}:${explainKey}`;
   const explanationLineRef = useRef(explanationLineKey);
@@ -221,22 +225,22 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       while (timePosition + 1 < playable.length && currentTime >= playable[timePosition + 1].line.start) {
         timePosition += 1;
       }
-      startRound(timePosition);
+      queueMicrotask(() => startRound(timePosition));
       return;
     }
 
     if (position === playable.length - 1 && currentTime >= lineEnd) {
       onPause?.();
-      setPhase("finished");
+      queueMicrotask(() => setPhase("finished"));
     }
-  }, [active, currentTime, currentLine, isRoundComplete, onPauseAfterFade, onPause, phase, playable, position, round]);
+  }, [active, currentTime, currentLine, isRoundComplete, onPauseAfterFade, onPause, phase, playable, position, round, startRound]);
 
   useEffect(() => {
     if (phase !== "finished" || !songId || progressSavedRef.current) return;
     progressSavedRef.current = true;
-    setProgressStatus("saving");
-
     void (async () => {
+      await Promise.resolve();
+      setProgressStatus("saving");
       try {
         const response = await fetch("/api/media-progress", {
           method: "POST",
@@ -263,16 +267,6 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   }, [accuracy, completedWords, game.mistakes, phase, settings.difficulty, songId, totalHiddenWords]);
 
   // ---------- Round controls ----------
-
-  function startRound(nextPosition: number, activeSettings: GameSettings = settings) {
-    const entry = playable[nextPosition];
-    if (!entry) return;
-    fadeStartedRoundRef.current = null;
-    activeMistakeRef.current = null;
-    setConsecutiveMistakes(0);
-    setPosition(nextPosition);
-    setRound(buildRound(entry.index, entry.line.text, activeSettings, wordPool));
-  }
 
   function startGame() {
     if (playable.length === 0) return;
@@ -314,20 +308,20 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       setPhase("playing");
       onPlayLine?.(playable[startPosition].line.start);
     });
-  }, [active, currentLine, currentTime, hasPlaybackStarted, onPlayLine, phase, playable, position, round, startRequest]);
+  }, [active, currentLine, currentTime, hasPlaybackStarted, onPlayLine, phase, playable, position, round, startRequest, startRound]);
 
-  function goPrevious() {
+  const goPrevious = useCallback(() => {
     if (position <= 0) return;
     const previousPosition = position - 1;
     const previousLine = playable[previousPosition]?.line;
     if (!previousLine) return;
     startRound(previousPosition);
     onPlayLine?.(previousLine.start);
-  }
-  function replayCurrentLine() {
+  }, [onPlayLine, playable, position, startRound]);
+  const replayCurrentLine = useCallback(() => {
     if (!currentLine || !onPlayLine) return;
     onPlayLine(currentLine.start);
-  }
+  }, [currentLine, onPlayLine]);
 
   function quitToSetup() {
     setRound(null);
@@ -341,7 +335,6 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   function registerCorrect(tokenId: number, bankItemId?: string) {
     const wordKey = `${round?.lineIndex ?? ""}:${tokenId}`;
     dispatch({ type: "correct", wordKey });
-    activeMistakeRef.current = null;
     setConsecutiveMistakes(0);
     const hiddenCount = round?.tokens.filter((token) => token.hidden).length ?? 0;
     if (round && round.filledIds.length + 1 >= hiddenCount && phase === "playing" && fadeStartedRoundRef.current === round) {
@@ -365,10 +358,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     dispatch({ type: "wrong" });
     setShakeKey((key) => key + 1); // Trigger the shake animation.
     const wordKey = `${round?.lineIndex ?? ""}:${token.id}`;
-    const count = activeMistakeRef.current?.wordKey === wordKey
-      ? activeMistakeRef.current.count + 1
-      : 1;
-    activeMistakeRef.current = { wordKey, count };
+    const count = consecutiveMistakes + 1;
     setConsecutiveMistakes(count);
     if (count < 3 || !round) return;
 
@@ -380,7 +370,6 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
           revealedIds: [...previous.revealedIds, token.id],
         }
       : previous);
-    activeMistakeRef.current = null;
     setConsecutiveMistakes(0);
 
     const hiddenCount = round.tokens.filter((item) => item.hidden).length;
@@ -449,7 +438,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentLine, isGamePlaying, onPlayLine, position, settings.mode]);
+  }, [currentLine, goPrevious, isGamePlaying, onPlayLine, position, replayCurrentLine, settings.mode]);
 
   // ---------- Shake animation for incorrect answers ----------
   // Use the Web Animations API instead of CSS keyframes.

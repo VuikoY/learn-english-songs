@@ -54,7 +54,9 @@ npx supabase db push
 
 The CLI may ask for the database password. Do not put database passwords, access tokens, or other secrets in Git or share them in chat. Review every pending migration before applying it to production. In particular, `20261019120000_remove_song_artist.sql` drops the `artist` column from `public.songs`, which deletes any data stored in that column. Back up or migrate that data first if it needs to be kept.
 
-Migrations are currently run manually; deploying the Next.js app through Vercel does not apply them. After a successful push, check the Supabase migration history and verify the deployed app. Do not configure automatic production migration runs until pending SQL changes and any destructive operations have been reviewed.
+After initial setup, GitHub Actions applies new migrations automatically when changes under `supabase/migrations` are pushed to `main`. In GitHub, create a `production` environment under **Settings → Environments**, then add an environment secret named `SUPABASE_DB_URL` containing the full Session pooler URI for the production database. Rotate any database password previously exposed, and URL-encode reserved characters in the replacement password. Keep the URI private.
+
+The workflow only runs for migration-file changes (or when started manually from Actions); it does not run as part of the Vercel build. Vercel may deploy the same commit in parallel, so make schema changes backward-compatible with the currently deployed app. Review every migration before merging it to `main`, especially destructive changes. After a successful run, check the workflow and Supabase migration history.
 
 ## Commands
 

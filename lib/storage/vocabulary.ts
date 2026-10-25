@@ -191,8 +191,7 @@ export type AddResult = "added" | "duplicate" | "error";
 
 export function useVocabulary() {
   const { userId, loading } = useAuthState();
-  const key = storageKey(userId);
-  const getScopedSnapshot = useCallback(() => loading ? EMPTY : getItems(userId), [key, loading, userId]);
+  const getScopedSnapshot = useCallback(() => loading ? EMPTY : getItems(userId), [loading, userId]);
   const items = useSyncExternalStore(subscribe, getScopedSnapshot, () => EMPTY);
 
   useEffect(() => {
