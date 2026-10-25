@@ -3,6 +3,14 @@
 // lang is the song language. Transcript lines are cleaned before being returned.
 
 import { NextResponse } from "next/server";
+import {
+  YoutubeTranscript,
+  YoutubeTranscriptDisabledError,
+  YoutubeTranscriptNotAvailableError,
+  YoutubeTranscriptNotAvailableLanguageError,
+  YoutubeTranscriptTooManyRequestError,
+  YoutubeTranscriptVideoUnavailableError,
+} from "youtube-transcript";
 import { cleanTranscript } from "@/lib/utils/cleanTranscript";
 import { isValidVideoId } from "@/lib/youtube";
 import type { LyricLine } from "@/lib/types";
@@ -86,38 +94,30 @@ export async function GET(request: Request) {
       if (cached && Array.isArray(cached.lines_json)) return NextResponse.json(cached.lines_json);
     }
 
-    const apiKey = process.env.RAPIDAPI_KEY;
-    const apiHost = process.env.RAPIDAPI_HOST?.trim();
-    if (!apiKey || !apiHost) {
-      console.error("[transcript] RapidAPI credentials are not configured", {
-        hasKey: Boolean(apiKey),
-        hasHost: Boolean(apiHost),
-      });
-      return NextResponse.json({ error: "Transcript provider is not configured." }, { status: 503 });
-    }
-
-    if (!/^[a-z0-9.-]+$/i.test(apiHost)) {
-      console.error("[transcript] RapidAPI host is invalid");
-      return NextResponse.json({ error: "Transcript provider is not configured correctly." }, { status: 503 });
-    }
-
-    const rapidApiUrl = new URL(`https://${apiHost}/transcript`);
-    rapidApiUrl.searchParams.set("video_id", videoId);
-    rapidApiUrl.searchParams.set("lang", lang);
-
-    let response: Response;
+    let items: Awaited<ReturnType<typeof YoutubeTranscript.fetchTranscript>>;
     try {
-      response = await fetch(rapidApiUrl, {
-        headers: {
-          "x-rapidapi-key": apiKey,
-          "x-rapidapi-host": apiHost,
-        },
-        cache: "no-store",
-        signal: AbortSignal.timeout(15_000),
+      items = await YoutubeTranscript.fetchTranscript(videoId, {
+        lang,
+        fetch: (input, init) => fetch(input, {
+          ...init,
+          signal: AbortSignal.timeout(15_000),
+        }),
       });
     } catch (error) {
+      if (error instanceof YoutubeTranscriptTooManyRequestError) {
+        console.error("[transcript] YouTube requested a CAPTCHA for transcript retrieval");
+        return NextResponse.json({ error: "Transcript provider quota exceeded. Please try again later." }, { status: 429 });
+      }
+      if (
+        error instanceof YoutubeTranscriptDisabledError ||
+        error instanceof YoutubeTranscriptNotAvailableError ||
+        error instanceof YoutubeTranscriptNotAvailableLanguageError ||
+        error instanceof YoutubeTranscriptVideoUnavailableError
+      ) {
+        return NextResponse.json({ error: "No subtitles are available for this video and language." }, { status: 404 });
+      }
       const timedOut = error instanceof Error && error.name === "TimeoutError";
-      console.error("[transcript] RapidAPI request failed", {
+      console.error("[transcript] YouTube transcript request failed", {
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
       return NextResponse.json(
@@ -126,55 +126,27 @@ export async function GET(request: Request) {
       );
     }
 
-    if (response.status === 404) {
-      console.info("[transcript] RapidAPI has no subtitles for the requested video and language");
-      return NextResponse.json({ error: "No subtitles are available for this video and language." }, { status: 404 });
-    }
-    if (response.status === 429) {
-      console.error("[transcript] RapidAPI quota exceeded");
-      return NextResponse.json({ error: "Transcript provider quota exceeded. Please try again later." }, { status: 429 });
-    }
-    if (!response.ok) {
-      console.error("[transcript] RapidAPI returned an error", { status: response.status });
-      return NextResponse.json({ error: "The transcript provider could not retrieve subtitles." }, { status: 502 });
-    }
-
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      console.error("[transcript] RapidAPI returned invalid JSON");
-      return NextResponse.json({ error: "The transcript provider returned an invalid response." }, { status: 502 });
-    }
-
-    const payloadObject = typeof payload === "object" && payload !== null
-      ? payload as Record<string, unknown>
-      : null;
-    const items = Array.isArray(payload)
-      ? payload
-      : payloadObject?.transcript ?? payloadObject?.items ?? payloadObject?.content ?? payloadObject?.data;
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "No subtitles are available for this video and language." }, { status: 404 });
     }
 
-    const rawLines: LyricLine[] = [];
-    for (const item of items) {
-      if (typeof item !== "object" || item === null) {
-        return NextResponse.json({ error: "The transcript provider returned invalid subtitle data." }, { status: 502 });
-      }
-      const segment = item as { text?: unknown; start?: unknown; offset?: unknown; duration?: unknown; dur?: unknown };
-      const start = segment.start ?? (typeof segment.offset === "number" ? segment.offset / 1000 : undefined);
-      const duration = segment.duration ?? segment.dur;
-      if (typeof segment.text !== "string" || typeof start !== "number" || !Number.isFinite(start) ||
-        typeof duration !== "number" || !Number.isFinite(duration) || start < 0 || duration < 0) {
-        return NextResponse.json({ error: "The transcript provider returned invalid subtitle data." }, { status: 502 });
-      }
-      rawLines.push({
-        text: segment.text,
-        start,
-        duration,
-      });
+    if (items.some((item) =>
+      typeof item.text !== "string" ||
+      typeof item.offset !== "number" || !Number.isFinite(item.offset) || item.offset < 0 ||
+      typeof item.duration !== "number" || !Number.isFinite(item.duration) || item.duration < 0
+    )) {
+      console.error("[transcript] YouTube returned invalid subtitle data");
+      return NextResponse.json({ error: "The transcript provider returned an invalid response." }, { status: 502 });
     }
+
+    const durations = items.map((item) => item.duration).sort((a, b) => a - b);
+    const medianDuration = durations[Math.floor(durations.length / 2)];
+    const timeDivider = medianDuration > 30 ? 1000 : 1;
+    const rawLines: LyricLine[] = items.map((item) => ({
+      text: item.text,
+      start: item.offset / timeDivider,
+      duration: item.duration / timeDivider,
+    }));
 
     // Decode entities and remove markers such as [Music] and (Laughter).
     const lines = cleanTranscript(rawLines);
