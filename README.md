@@ -5,7 +5,7 @@ Next.js app for learning English through song subtitles, line explanations, voca
 ## Local setup
 
 1. Use Node.js 20+ and run `npm install`.
-2. Copy `.env.example` to `.env.local` and fill in the Supabase project URL, public anon/publishable key, server-only service-role key and Gemini API key. Explanations use the `gemini-3.8-flash` model. `MOCK_AI=true` enables demo explanations without Gemini. `SUPABASE_SERVICE_ROLE_KEY` is used only by server routes; never expose it through a `NEXT_PUBLIC_` variable or browser code.
+2. Copy `.env.example` to `.env.local` and fill in the Supabase project URL, public anon/publishable key, server-only service-role key, RapidAPI credentials and Gemini API key. Explanations use the `gemini-3.8-flash` model. `MOCK_AI=true` enables demo explanations without Gemini. `SUPABASE_SERVICE_ROLE_KEY`, `RAPIDAPI_KEY` and `RAPIDAPI_HOST` are used only by server routes; never expose them through a `NEXT_PUBLIC_` variable or browser code.
 3. Apply the ordered migrations in `supabase/migrations` to your Supabase project (for example, link the project with `npx supabase link` and run `npx supabase db push`). `supabase/schema.sql` is a legacy pointer; database changes are managed by migrations.
 4. In Supabase Authentication, enable Google and Email/Password, and allow email signups if users should be able to register. The app has separate email/password sign-in and registration actions. With email confirmation enabled, users receive a confirmation link; otherwise Supabase can create a session immediately. Users who signed in with Google or a previous magic link can use “Встановити або відновити пароль” to set a password through Supabase password recovery. Add `http://localhost:3000/auth/callback` and your deployed `https://<domain>/auth/callback` to the allowed redirect URLs; set the site URL to the production origin.
 5. Start with `npm run dev`.
@@ -23,6 +23,8 @@ The browser uses only the Supabase public anon/publishable key. Never put a `ser
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (server-only; never use a `NEXT_PUBLIC_` prefix)
+   - `RAPIDAPI_KEY` (server-only; required for fetching uncached transcripts)
+   - `RAPIDAPI_HOST` (RapidAPI host for the selected YouTube transcript service)
    - `GEMINI_API_KEY`
    - `MOCK_AI=false`
 3. Apply the database migrations as described below. Migrations run against Supabase separately from the Vercel app deployment.
@@ -31,7 +33,7 @@ The browser uses only the Supabase public anon/publishable key. Never put a `ser
 
 ### Deploying changes
 
-Before pushing, run `npm run lint` and `npm run build` locally. Push or merge the change to the configured Production Branch; Vercel builds and deploys it automatically. Pushes to other branches create Preview deployments. Check the deployment's build logs and open its URL to verify the app. If a deployment fails, fix the reported issue and push again, or redeploy the commit from the Vercel dashboard.
+Before pushing, run `npm run lint`, `npm run knip` and `npm run build` locally. Push or merge the change to the configured Production Branch; Vercel builds and deploys it automatically. Pushes to other branches create Preview deployments. Check the deployment's build logs and open its URL to verify the app. If a deployment fails, fix the reported issue and push again, or redeploy the commit from the Vercel dashboard.
 
 Keep secrets in Vercel's environment-variable settings and out of Git; `.env.local` is for local development only. Deployment requires access to the project's Vercel and Supabase accounts.
 
@@ -63,6 +65,7 @@ The workflow only runs for migration-file changes (or when started manually from
 ```bash
 npm run dev
 npm run lint
+npm run knip
 npm run build
 npm run start
 ```

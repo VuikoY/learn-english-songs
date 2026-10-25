@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "knip": "knip",
     "db:start": "npx supabase start",
     "db:stop": "npx supabase stop",
     "db:reset": "npx supabase db reset",
@@ -23,8 +24,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-youtube": "^10.1.0",
-    "tailwind-merge": "^3.7.0",
-    "youtube-transcript": "^1.3.1"
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
@@ -33,6 +33,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "knip": "^6.43.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
