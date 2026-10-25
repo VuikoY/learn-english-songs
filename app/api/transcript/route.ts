@@ -155,35 +155,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No text remained after cleaning the subtitles." }, { status: 404 });
     }
 
-    const admin = createSupabaseAdminClient();
-    if (!admin) {
-      return NextResponse.json({ error: "Transcript caching is not configured." }, { status: 503 });
-    }
-
-    const { data: existingCache, error: cacheLookupError } = await admin.from("transcripts")
-      .select("video_id,language")
-      .eq("video_id", videoId)
-      .eq("language", lang)
-      .maybeSingle();
-    if (cacheLookupError) {
-      logTranscriptDatabaseError("provider_cache_lookup", cacheLookupError);
-      return NextResponse.json({ error: "Could not check the transcript cache." }, { status: 503 });
-    }
-
-    const { error: cacheWriteError } = existingCache
-      ? await admin.from("transcripts").update({ lines_json: lines, verified: true })
-        .eq("video_id", videoId).eq("language", lang)
-      : await admin.from("transcripts").insert({
-        video_id: videoId,
-        language: lang,
-        lines_json: lines,
-        verified: true,
-      });
-    if (cacheWriteError) {
-      logTranscriptDatabaseError("provider_cache_write", cacheWriteError);
-      return NextResponse.json({ error: "Could not save the transcript to the cache." }, { status: 503 });
-    }
-
     return NextResponse.json(lines);
   } catch (error) {
     console.error("[transcript] Unexpected request failure", {
