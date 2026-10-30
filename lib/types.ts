@@ -1,11 +1,14 @@
 // lib/types.ts
 // Shared types for client and server code.
 
+import type { Language } from "@/types/game";
+
 /** One subtitle line. All time values are in seconds. */
 export type LyricLine = {
   text: string;
   start: number; // Line start time.
   duration: number; // Line duration.
+  translations?: Partial<Record<Language, string>>;
 };
 
 /** AI response shown by the AI Explain action. */

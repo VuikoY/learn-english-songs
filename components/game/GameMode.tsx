@@ -10,6 +10,7 @@ import {
   Loader2,
   Sparkles,
   ChevronUp,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import GameCompletionModal from "@/components/game/GameCompletionModal";
@@ -75,6 +76,10 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   const [explanationError, setExplanationError] = useState("");
   const [remoteExplanation, setRemoteExplanation] = useState<Explanation | null>(null);
   const [partialExplanation, setPartialExplanation] = useState<Partial<Explanation> | null>(null);
+  const [lineTranslations, setLineTranslations] = useState<Record<string, string>>({});
+  const [lineTranslationStates, setLineTranslationStates] = useState<Record<string, "loading" | "error">>({});
+  const [lineTranslationErrors, setLineTranslationErrors] = useState<Record<string, string>>({});
+  const [expandedTranslationKey, setExpandedTranslationKey] = useState<string | null>(null);
 
   // ---------- State ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
@@ -122,6 +127,12 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   const activeWordMistakes = consecutiveMistakes;
   const isRoundComplete = round !== null && nextBlank === undefined;
   const currentLine = round ? lines[round.lineIndex] : null;
+  const currentTranslationKey = currentLine && round
+    ? `${sourceLanguage}:${targetLanguage}:${round.lineIndex}:${currentLine.text}`
+    : "";
+  const currentLineTranslation = currentLine
+    ? currentLine.translations?.[targetLanguage] ?? lineTranslations[currentTranslationKey]
+    : undefined;
 
   const startRound = useCallback((nextPosition: number, activeSettings: GameSettings = settings) => {
     const entry = playable[nextPosition];
@@ -201,6 +212,62 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     } catch (error) {
       setExplanationError(error instanceof Error ? error.message : "Unknown error");
       setExplanationStatus("error");
+    }
+  }
+
+  async function toggleLineTranslation() {
+    if (!currentLine || !round || !currentTranslationKey) return;
+    if (expandedTranslationKey === currentTranslationKey) {
+      setExpandedTranslationKey(null);
+      return;
+    }
+
+    setExpandedTranslationKey(currentTranslationKey);
+    if (currentLineTranslation || lineTranslationStates[currentTranslationKey] === "loading") return;
+
+    setLineTranslationStates((previous) => ({ ...previous, [currentTranslationKey]: "loading" }));
+    try {
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: currentLine.text,
+          sourceLang: sourceLanguage,
+          targetLang: targetLanguage,
+          ...(youtubeId ? { videoId: youtubeId, lineIndex: round.lineIndex } : {}),
+        }),
+      });
+      const result: unknown = await response.json().catch(() => null);
+      const payload = typeof result === "object" && result !== null
+        ? result as { translation?: unknown; error?: unknown }
+        : null;
+      if (!response.ok || typeof payload?.translation !== "string" || !payload.translation.trim()) {
+        const code = typeof payload?.error === "string" ? payload.error : "translation_unavailable";
+        const message = code === "invalid_request"
+          ? t("lyrics.translationInvalid")
+          : code === "unsupported_language"
+            ? t("lyrics.translationUnsupported")
+            : t("lyrics.translationError");
+        setLineTranslationStates((previous) => ({ ...previous, [currentTranslationKey]: "error" }));
+        setLineTranslationErrors((previous) => ({ ...previous, [currentTranslationKey]: message }));
+        return;
+      }
+
+      const translation = payload.translation;
+      setLineTranslations((previous) => ({ ...previous, [currentTranslationKey]: translation }));
+      setLineTranslationErrors((previous) => {
+        const next = { ...previous };
+        delete next[currentTranslationKey];
+        return next;
+      });
+      setLineTranslationStates((previous) => {
+        const next = { ...previous };
+        delete next[currentTranslationKey];
+        return next;
+      });
+    } catch {
+      setLineTranslationStates((previous) => ({ ...previous, [currentTranslationKey]: "error" }));
+      setLineTranslationErrors((previous) => ({ ...previous, [currentTranslationKey]: t("lyrics.translationError") }));
     }
   }
 
@@ -566,7 +633,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
         </div>
       )}
 
-      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_minmax(0,1fr)]">
         {onPlayLine && (
           <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={position === 0} onClick={goPrevious}>
             <ArrowLeft className="size-4" />
@@ -579,10 +646,43 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
             {t("game.replay")}
           </Button>
         )}
-        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" size="sm" variant="outline" disabled={!currentLine || explanationStatus === "loading"} onClick={toggleExplanation}>
-          {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" /> : explanationStatus === "open" ? <ChevronUp className="size-4" /> : <Sparkles className="size-4" />}
-          {explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
-        </Button>
+        <div className="flex items-center justify-center gap-1">
+          <Button
+            className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground"
+            type="button"
+            size="sm"
+            variant="ghost"
+            title={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
+            aria-label={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
+            aria-expanded={explanationStatus === "open"}
+            disabled={!currentLine || explanationStatus === "loading"}
+            onClick={toggleExplanation}
+          >
+            {explanationStatus === "loading"
+              ? <Loader2 className="size-4 animate-spin" aria-hidden="true"/>
+              : explanationStatus === "open"
+                ? <ChevronUp className="size-4" aria-hidden="true"/>
+                : <Sparkles className="size-4" aria-hidden="true"/>}
+          </Button>
+          <Button
+            className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground"
+            type="button"
+            size="sm"
+            variant="ghost"
+            title={lineTranslationStates[currentTranslationKey] === "loading"
+              ? t("lyrics.translationLoading")
+              : expandedTranslationKey === currentTranslationKey ? t("lyrics.translationHide") : t("lyrics.translateLine")}
+            aria-label={lineTranslationStates[currentTranslationKey] === "loading"
+              ? t("lyrics.translationLoading")
+              : expandedTranslationKey === currentTranslationKey ? t("lyrics.translationHide") : t("lyrics.translateLine")}
+            aria-expanded={expandedTranslationKey === currentTranslationKey}
+            onClick={() => void toggleLineTranslation()}
+          >
+            {lineTranslationStates[currentTranslationKey] === "loading"
+              ? <Loader2 className="size-4 animate-spin" aria-hidden="true"/>
+              : <Globe className="size-4" aria-hidden="true"/>}
+          </Button>
+        </div>
         <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="ghost" size="sm" onClick={quitToSetup}>
           <span className="flex w-full items-center justify-end gap-2">
             <LogOut className="size-4" />
@@ -631,8 +731,21 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
             );
           })}
         </p>
-        <div className="w-6 shrink-0"><FavoriteLineButton songId={songId} lineIndex={round.lineIndex} lineText={currentLine.text} startTime={currentLine.start} endTime={currentLine.start + currentLine.duration}/></div>
+        <div className="w-6 shrink-0">
+          <FavoriteLineButton songId={songId} lineIndex={round.lineIndex} lineText={currentLine.text} startTime={currentLine.start} endTime={currentLine.start + currentLine.duration}/>
         </div>
+        </div>
+        {expandedTranslationKey === currentTranslationKey && (
+          <div className="mt-3 rounded bg-muted/50 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
+            {lineTranslationStates[currentTranslationKey] === "loading" && t("lyrics.translationLoading")}
+            {lineTranslationStates[currentTranslationKey] === "error" && (
+              <p role="alert" className="text-destructive">
+                {lineTranslationErrors[currentTranslationKey] ?? t("lyrics.translationError")}
+              </p>
+            )}
+            {currentLineTranslation && <p>{currentLineTranslation}</p>}
+          </div>
+        )}
       </div>
 
       {/* Bottom floating panel for AI actions or the word bank. */}

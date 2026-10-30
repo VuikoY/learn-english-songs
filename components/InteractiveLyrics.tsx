@@ -2,7 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronUp, Loader2, Maximize2, Minimize2, Sparkles } from "lucide-react";
+import { ChevronUp, Globe, Loader2, Maximize2, Minimize2, Play, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
 import { useLanguage } from "@/context/LanguageContext";
@@ -30,6 +30,40 @@ type LineState =
   | { kind: "error"; message: string }
   | { kind: "open"; explanation?: Explanation }; // The card is expanded.
 
+type TranslationState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string };
+
+type WordLookupState =
+  | { kind: "loading"; key: string; lineIndex: number; targetLanguage: string }
+  | { kind: "error"; key: string; lineIndex: number; targetLanguage: string; message: string }
+  | { kind: "open"; key: string; lineIndex: number; targetLanguage: string; translation: string };
+
+async function requestTranslation(input: {
+  text: string;
+  sourceLang: string;
+  targetLang: string;
+  videoId?: string;
+  lineIndex?: number;
+}): Promise<string> {
+  const response = await fetch("/api/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const result: unknown = await response.json().catch(() => null);
+  const payload = typeof result === "object" && result !== null
+    ? result as { translation?: unknown; error?: unknown }
+    : null;
+  if (!response.ok) {
+    throw new Error(typeof payload?.error === "string" ? payload.error : "translation_unavailable");
+  }
+  if (typeof payload?.translation !== "string" || !payload.translation.trim()) {
+    throw new Error("translation_unavailable");
+  }
+  return payload.translation;
+}
+
 // Cache key includes normalized line text and language pair, so language variants stay separate.
 // Include the line index and text in the state key so old video states cannot be reused.
 const lineId = (line: LyricLine, index: number, langKey: string) =>
@@ -45,6 +79,11 @@ export default function InteractiveLyrics({
 }: Props) {
   // Explanation panel state for each line (loading, error, or open).
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
+  const [lineTranslations, setLineTranslations] = useState<Record<string, string>>({});
+  const [lineTranslationStates, setLineTranslationStates] = useState<Record<string, TranslationState>>({});
+  const [expandedTranslations, setExpandedTranslations] = useState<Record<string, boolean>>({});
+  const [wordTranslations, setWordTranslations] = useState<Map<string, string>>(() => new Map());
+  const [wordLookup, setWordLookup] = useState<WordLookupState | null>(null);
   const [showAllLines, setShowAllLines] = useState(false);
   const streamExplanation = useStreamingExplanation();
 
@@ -77,6 +116,73 @@ export default function InteractiveLyrics({
       else delete next[id];
       return next;
     });
+  }
+
+  function translationError(error: unknown): string {
+    const code = error instanceof Error ? error.message : "translation_unavailable";
+    if (code === "invalid_request") return t("lyrics.translationInvalid");
+    if (code === "unsupported_language") return t("lyrics.translationUnsupported");
+    return t("lyrics.translationError");
+  }
+
+  async function handleWordClick(word: string, index: number) {
+    const key = `${sourceLanguage}:${targetLanguage}:${word.toLowerCase()}`;
+    if (wordLookup?.key === key && wordLookup.lineIndex === index) {
+      if (wordLookup.kind === "open") {
+        setWordLookup(null);
+        return;
+      }
+      if (wordLookup.kind === "loading") return;
+    }
+
+    const cached = wordTranslations.get(key);
+    if (cached) {
+      setWordLookup({ kind: "open", key, lineIndex: index, targetLanguage, translation: cached });
+      return;
+    }
+
+    setWordLookup({ kind: "loading", key, lineIndex: index, targetLanguage });
+    try {
+      const translation = await requestTranslation({ text: word, sourceLang: sourceLanguage, targetLang: targetLanguage });
+      setWordTranslations((previous) => new Map(previous).set(key, translation));
+      setWordLookup({ kind: "open", key, lineIndex: index, targetLanguage, translation });
+    } catch (error) {
+      setWordLookup({ kind: "error", key, lineIndex: index, targetLanguage, message: translationError(error) });
+    }
+  }
+
+  async function handleLineTranslation(index: number) {
+    const line = lines[index];
+    const id = lineId(line, index, langKey);
+    if (expandedTranslations[id]) {
+      setExpandedTranslations((previous) => ({ ...previous, [id]: false }));
+      return;
+    }
+
+    setExpandedTranslations((previous) => ({ ...previous, [id]: true }));
+    if (line.translations?.[targetLanguage] || lineTranslations[id]) return;
+    if (lineTranslationStates[id]?.kind === "loading") return;
+
+    setLineTranslationStates((previous) => ({ ...previous, [id]: { kind: "loading" } }));
+    try {
+      const translation = await requestTranslation({
+        text: line.text,
+        sourceLang: sourceLanguage,
+        targetLang: targetLanguage,
+        ...(youtubeId ? { videoId: youtubeId, lineIndex: index } : {}),
+      });
+      setLineTranslations((previous) => ({ ...previous, [id]: translation }));
+      setLineTranslationStates((previous) => {
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      });
+    } catch (error) {
+      setLineTranslationStates((previous) => ({
+        ...previous,
+        [id]: { kind: "error", message: translationError(error) },
+      }));
+    }
   }
 
   async function handleExplain(index: number) {
@@ -146,6 +252,9 @@ export default function InteractiveLyrics({
             currentTime < line.start + line.duration + 1
           );
           const state = lineStates[id];
+          const translationState = lineTranslationStates[id];
+          const lineTranslation = line.translations?.[targetLanguage] ?? lineTranslations[id];
+          const showWordLookup = wordLookup?.lineIndex === index && wordLookup.targetLanguage === targetLanguage;
           const explanation = state?.kind === "open" ? state.explanation : undefined;
           const elapsed = Math.max(0, Math.min(currentTime - line.start, line.duration));
           const progress = isCurrent && line.duration > 0
@@ -155,8 +264,25 @@ export default function InteractiveLyrics({
           return (
             <div key={id} className="rounded px-1 py-1">
               <div className="flex items-center justify-between gap-2 px-2 py-1">
-                <div className="w-6 shrink-0">{(showAllLines || isActive) && <FavoriteLineButton songId={songId} lineIndex={index} lineText={line.text} startTime={line.start} endTime={line.start + line.duration}/>}</div>
-                <button type="button" onClick={() => onSeek(line.start)} className={`min-w-0 flex-1 overflow-hidden px-1 text-center text-base font-medium leading-snug md:px-2 md:text-lg md:whitespace-nowrap ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    title={t("lyrics.playLine")}
+                    aria-label={t("lyrics.playLine")}
+                    className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => onSeek(line.start)}
+                  >
+                    <Play className="size-4 fill-current" aria-hidden="true"/>
+                  </Button>
+                  {(showAllLines || isActive) && (
+                    <FavoriteLineButton songId={songId} lineIndex={index} lineText={line.text} startTime={line.start} endTime={line.start + line.duration}/>
+                  )}
+                </div>
+                <div
+                  className={`min-w-0 flex-1 overflow-hidden px-1 text-center text-base font-medium leading-snug md:px-2 md:text-lg md:whitespace-nowrap ${isActive ? "text-foreground" : "text-muted-foreground"}`}
+                >
                   <span className="relative inline-block max-w-full">
                     {isCurrent && (
                       <>
@@ -171,33 +297,98 @@ export default function InteractiveLyrics({
                         />
                       </>
                     )}
-                    <span className="relative z-10 whitespace-normal break-words md:whitespace-nowrap">{line.text}</span>
+                    <span className="relative z-10 whitespace-normal break-words md:whitespace-nowrap">
+                      {line.text.split(/(\s+)/).map((part, partIndex) => {
+                        if (/^\s+$/.test(part)) return part;
+                        const word = part.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}][\p{L}\p{N}'’\-]*)([^\p{L}\p{N}]*)$/u);
+                        if (!word) return part;
+                        return (
+                          <span key={`${partIndex}:${part}`}>
+                            {word[1]}
+                            <button
+                              type="button"
+                              title={t("lyrics.translateWord", { word: word[2] })}
+                              aria-label={t("lyrics.translateWord", { word: word[2] })}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleWordClick(word[2], index);
+                              }}
+                              className="rounded-sm hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            >
+                              {word[2]}
+                            </button>
+                            {word[3]}
+                          </span>
+                        );
+                      })}
+                    </span>
                   </span>
-                </button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title={translationState?.kind === "loading"
+                    ? t("lyrics.translationLoading")
+                    : expandedTranslations[id] ? t("lyrics.translationHide") : t("lyrics.translateLine")}
+                  aria-label={translationState?.kind === "loading"
+                    ? t("lyrics.translationLoading")
+                    : expandedTranslations[id] ? t("lyrics.translationHide") : t("lyrics.translateLine")}
+                  aria-expanded={Boolean(expandedTranslations[id])}
+                  className="h-8 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => void handleLineTranslation(index)}
+                >
+                  {translationState?.kind === "loading"
+                    ? <Loader2 className="size-4 animate-spin" aria-hidden="true"/>
+                    : <Globe className="size-4" aria-hidden="true"/>}
+                </Button>
                 {showAllLines ? (
-                  <Button type="button" variant="ghost" size="sm" aria-label={t("explain.button")} title={t("explain.button")} className="h-8 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground" disabled={state?.kind === "loading"} onClick={() => void handleExplain(index)}>
-                    {state?.kind === "loading" ? <Loader2 className="size-4 animate-spin"/> : state?.kind === "open" ? <ChevronUp className="size-4"/> : <Sparkles className="size-4"/>}
+                  <Button type="button" variant="ghost" size="sm" aria-label={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")} title={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")} className="h-8 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground" disabled={state?.kind === "loading"} onClick={() => void handleExplain(index)}>
+                    {state?.kind === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true"/> : state?.kind === "open" ? <ChevronUp className="size-4" aria-hidden="true"/> : <Sparkles className="size-4" aria-hidden="true"/>}
                   </Button>
                 ) : isActive && (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="shrink-0 px-2 text-xs sm:text-sm"
+                    title={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")}
+                    aria-label={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")}
+                    className="h-8 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
                     disabled={state?.kind === "loading"}
-                    onClick={() => handleExplain(index)}
+                    onClick={() => void handleExplain(index)}
                   >
                     {state?.kind === "loading" ? (
-                      <Loader2 className="size-4 animate-spin" />
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true"/>
                     ) : state?.kind === "open" ? (
-                      <ChevronUp className="size-4" />
+                      <ChevronUp className="size-4" aria-hidden="true"/>
                     ) : (
-                      <Sparkles className="size-4" />
+                      <Sparkles className="size-4" aria-hidden="true"/>
                     )}
-                    {state?.kind === "open" ? t("explain.hide") : t("explain.button")}
                   </Button>
                 )}
               </div>
+
+              {expandedTranslations[id] && (
+                <div className="mx-10 mt-1 rounded bg-muted/50 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
+                  {translationState?.kind === "loading" && t("lyrics.translationLoading")}
+                  {translationState?.kind === "error" && (
+                    <p role="alert" className="text-destructive">{translationState.message}</p>
+                  )}
+                  {lineTranslation && <p>{lineTranslation}</p>}
+                </div>
+              )}
+
+              {showWordLookup && wordLookup?.kind === "loading" && (
+                <p className="mx-10 mt-1 text-sm text-muted-foreground" role="status">{t("lyrics.translationLoading")}</p>
+              )}
+              {showWordLookup && wordLookup?.kind === "open" && (
+                <p className="mx-10 mt-1 rounded bg-muted/50 px-3 py-2 text-sm text-muted-foreground" role="status">
+                  {wordLookup.translation}
+                </p>
+              )}
+              {showWordLookup && wordLookup?.kind === "error" && (
+                <p className="mx-10 mt-1 text-sm text-destructive" role="alert">{wordLookup.message}</p>
+              )}
 
               {/* Render content below the line based on its state. */}
               {state?.kind === "loading" && (

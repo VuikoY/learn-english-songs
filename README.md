@@ -1,6 +1,6 @@
 # Learn English with Songs
 
-Next.js app for learning English through song subtitles, line explanations, vocabulary practice and learning progress.
+Next.js app for learning English through song subtitles, on-demand word and line translations, AI explanations, vocabulary practice and learning progress.
 
 ## Local setup
 
@@ -11,6 +11,8 @@ Next.js app for learning English through song subtitles, line explanations, voca
 5. Start with `npm run dev`.
 
 The interface language is selected independently from the song/source language and the explanation/target language. The interface and explanation languages are Russian, Ukrainian, English, Polish and Spanish; songs can currently be studied in English or Polish. The interface language defaults to Russian and is saved with the user's language settings (or locally for a guest); changing the languages being studied does not change the interface language.
+
+Click a subtitle word for a quick translation, or use the globe icon to reveal a full-line translation. Translations are requested from MyMemory on demand; word translations are cached in the current page, while line translations are saved in the catalog song's Supabase transcript JSON when the server-side Supabase service key is configured. Use AI Explain for deeper contextual and idiom explanations.
 
 The browser uses only the Supabase public anon/publishable key. Never put a `service_role` key in client code or a `NEXT_PUBLIC_` variable. RLS protects vocabulary/settings; only verified transcript rows are publicly readable. Direct Data API writes to the transcript table are revoked; the server route validates the signed-in user and performs the confirmation with its server-only service-role key. Explanation-cache writes require a signed-in account. Learning statistics and the leaderboard are on a separate page linked below the dashboard in the signed-in user menu. The leaderboard shares aggregated progress under stable pseudonyms rather than profile names or email addresses; it ranks by Hard completions, completed media, then average accuracy.
 
