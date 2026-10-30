@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import SongCatalog, { type CatalogSong } from "@/components/SongCatalog";
 import { fetchMediaCompletion } from "@/lib/mediaProgress";
+import { fetchSongTranscriptStats } from "@/lib/songTranscriptStats";
 
 export default function CatalogPage() {
   return (
@@ -25,6 +26,13 @@ async function CatalogPageContent() {
       songs = (data ?? []) as unknown as CatalogSong[];
     }
 
+    try {
+      const transcriptStats = await fetchSongTranscriptStats(supabase, songs.map((song) => song.id));
+      songs = songs.map((song) => ({ ...song, ...transcriptStats[song.id] }));
+    } catch (statsError) {
+      console.error("[catalog] Could not load transcript counts.", statsError);
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError) {
       console.error("[catalog] Could not identify current user for completion badges.", authError);
@@ -35,6 +43,7 @@ async function CatalogPageContent() {
           ...song,
           isCompleted: completion[song.id]?.isCompleted ?? false,
           completedDifficulty: completion[song.id]?.completedDifficulty ?? null,
+          averageAccuracy: completion[song.id]?.averageAccuracy ?? null,
         }));
       } catch (progressError) {
         console.error("[catalog] Could not load server-rendered completion badges.", progressError);

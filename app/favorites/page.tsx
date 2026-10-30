@@ -11,6 +11,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { CatalogSong } from "@/components/SongCatalog";
 import { songMetadataLabels } from "@/lib/songMetadata";
 import { fetchMediaCompletion } from "@/lib/mediaProgress";
+import { fetchSongTranscriptStats } from "@/lib/songTranscriptStats";
 
 const GUEST_FAVORITES_KEY = "lingo-clips:favorites:v1";
 const FAVORITES_CHANGED = "lingo-clips:favorites-changed";
@@ -51,16 +52,24 @@ export default function FavoritesPage() {
       if (error) throw error;
       const byId = new Map(((data ?? []) as unknown as CatalogSong[]).map(song => [song.id, song]));
       const favoriteSongs = ids.map(id => byId.get(id)).filter((song): song is CatalogSong => Boolean(song));
+      let songsWithStats = favoriteSongs;
+      try {
+        const transcriptStats = await fetchSongTranscriptStats(db, favoriteSongs.map((song) => song.id));
+        songsWithStats = favoriteSongs.map((song) => ({ ...song, ...transcriptStats[song.id] }));
+      } catch (statsError) {
+        console.error("[favorites] Could not load transcript counts.", statsError);
+      }
       try {
         const completion = await fetchMediaCompletion(db, userId, favoriteSongs.map((song) => song.id));
-        setSongs(favoriteSongs.map((song) => ({
+        setSongs(songsWithStats.map((song) => ({
           ...song,
           isCompleted: completion[song.id]?.isCompleted ?? false,
           completedDifficulty: completion[song.id]?.completedDifficulty ?? null,
+          averageAccuracy: completion[song.id]?.averageAccuracy ?? null,
         })));
       } catch (progressError) {
         console.error("[favorites] Could not load completion badges.", progressError);
-        setSongs(favoriteSongs);
+        setSongs(songsWithStats);
       }
     } catch {
       setSongs([]);

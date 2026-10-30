@@ -8,10 +8,11 @@ import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthState } from "@/context/AuthContext";
 import { fetchMediaCompletion } from "@/lib/mediaProgress";
+import { fetchSongTranscriptStats } from "@/lib/songTranscriptStats";
 
 export type ContentType = "music_video" | "movie_clip" | "interview" | "podcast" | "shorts" | "other";
 export const CONTENT_TYPES: ContentType[] = ["music_video", "movie_clip", "interview", "podcast", "shorts", "other"];
-export type CatalogSong = { id: string; youtube_id: string; title: string; thumbnail_url: string | null; language: string; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; isCompleted?: boolean; completedDifficulty?: "Easy" | "Medium" | "Hard" | null };
+export type CatalogSong = { id: string; youtube_id: string; title: string; thumbnail_url: string | null; language: string; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; isCompleted?: boolean; completedDifficulty?: "Easy" | "Medium" | "Hard" | null; averageAccuracy?: number | null; lineCount?: number; wordCount?: number };
 
 export default function SongCatalog({ songs }: { songs: CatalogSong[] }) {
   const { userId } = useAuthState();
@@ -35,16 +36,29 @@ export default function SongCatalog({ songs }: { songs: CatalogSong[] }) {
         : songs.filter(song => contentType === "all" || song.content_type === contentType);
       if (error) console.error("[catalog] Could not refresh songs.", error.code);
 
+      let songsWithStats = catalogSongs;
+      try {
+        const transcriptStats = await fetchSongTranscriptStats(db, catalogSongs.map((song) => song.id));
+        if (!active) return;
+        songsWithStats = catalogSongs.map((song) => ({
+          ...song,
+          ...transcriptStats[song.id],
+        }));
+      } catch (statsError) {
+        console.error("[catalog] Could not load transcript counts.", statsError);
+      }
+
       try {
         const completion = await fetchMediaCompletion(db, userId, catalogSongs.map((song) => song.id));
-        if (active) setCategorySongs(catalogSongs.map((song) => ({
+        if (active) setCategorySongs(songsWithStats.map((song) => ({
           ...song,
           isCompleted: completion[song.id]?.isCompleted ?? false,
           completedDifficulty: completion[song.id]?.completedDifficulty ?? null,
+          averageAccuracy: completion[song.id]?.averageAccuracy ?? null,
         })));
       } catch (progressError) {
         console.error("[catalog] Could not load completion badges.", progressError);
-        if (active) setCategorySongs(catalogSongs);
+        if (active) setCategorySongs(songsWithStats);
       }
     });
     return () => { active = false; };

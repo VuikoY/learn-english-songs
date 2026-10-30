@@ -139,7 +139,15 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            [_ in never]: never
+            "get_learning_leaderboard": {
+              Args: Record<PropertyKey, never>
+              Returns: {
+                "average_accuracy": number
+                "completed_media": number
+                "hard_completed": number
+                "pseudonym": string
+              }[]
+            }
           }
           Enums: {
             [_ in never]: never

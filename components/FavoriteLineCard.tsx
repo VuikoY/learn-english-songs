@@ -52,12 +52,12 @@ export default function FavoriteLineCard({ line }: Props) {
     finally { setExplainLoading(false); }
   }
 
-  const opts: YouTubeProps["opts"] = { width: "100%", height: "100%", playerVars: { autoplay: 1, controls: 0, disablekb: 1, start: Math.floor(Number(line.start_time)), end: Math.ceil(Number(line.end_time)), rel: 0 } };
+  const opts: YouTubeProps["opts"] = { width: "100%", height: "100%", playerVars: { autoplay: 1, controls: 0, disablekb: 1, start: Math.floor(Number(line.start_time)), end: Math.ceil(Number(line.end_time)), rel: 0, origin: typeof window === "undefined" ? "" : window.location.origin } };
   return <>
     <div className="mx-auto w-full max-w-sm min-w-0 overflow-hidden">
     <article className="grid w-full min-w-0 grid-cols-1 gap-3 rounded-xl border p-3">
       <div className="relative aspect-video w-full overflow-hidden rounded-lg">
-        {playing ? <YouTube className="absolute inset-0 h-full w-full overflow-hidden" iframeClassName="!absolute !inset-0 !block !h-full !w-full" videoId={line.songs.youtube_id} opts={opts} onReady={event => { player.current = event.target as unknown as Player; player.current.seekTo(Number(line.start_time), true); player.current.playVideo(); }} /> : <button type="button" aria-label={t("favorites.playSnippet")} className="absolute inset-0 h-full w-full" onClick={() => setPlaying(true)}><Image src={line.songs.thumbnail_url ?? `https://i.ytimg.com/vi/${line.songs.youtube_id}/hqdefault.jpg`} alt="" width={640} height={360} unoptimized className="h-full w-full object-cover"/><span className="absolute inset-0 grid place-items-center bg-black/25 text-white"><Play className="size-10 fill-current"/></span></button>}
+        {playing ? <YouTube className="absolute inset-0 h-full w-full overflow-hidden" iframeClassName="!absolute !inset-0 !block !h-full !w-full" videoId={line.songs.youtube_id} opts={opts} onReady={event => { player.current = event.target as unknown as Player; void event.target.getIframe().then((iframe: HTMLIFrameElement) => iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin")); player.current.seekTo(Number(line.start_time), true); player.current.playVideo(); }} /> : <button type="button" aria-label={t("favorites.playSnippet")} className="absolute inset-0 h-full w-full" onClick={() => setPlaying(true)}><Image src={line.songs.thumbnail_url ?? `https://i.ytimg.com/vi/${line.songs.youtube_id}/hqdefault.jpg`} alt="" width={640} height={360} unoptimized className="h-full w-full object-cover"/><span className="absolute inset-0 grid place-items-center bg-black/25 text-white"><Play className="size-10 fill-current"/></span></button>}
       </div>
       <div className="min-w-0"><blockquote className="break-words whitespace-pre-wrap text-sm font-semibold leading-relaxed md:text-base">{line.line_text}</blockquote><p className="mt-1.5 break-words text-xs text-muted-foreground">{line.songs.title}</p></div>
       <div className="grid grid-cols-3 gap-1.5">

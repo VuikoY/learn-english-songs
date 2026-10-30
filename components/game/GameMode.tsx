@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
-  ArrowDown,
+  ArrowUpDown,
   ArrowLeft,
   LogOut,
   Loader2,
@@ -61,6 +61,13 @@ type Props = {
 
 // Minimum number of words required for a line to be playable.
 const MIN_WORDS_PER_LINE = 3;
+
+function maskWordPreservingApostrophes(word: string): string {
+  return Array.from(word, (character) =>
+    /['’]/u.test(character) ? character : "\u2022",
+  ).join("");
+}
+
 export default function GameMode({ lines, currentTime, youtubeId, songId, onPlayLine, onPauseAfterFade, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const streamExplanation = useStreamingExplanation();
@@ -355,13 +362,13 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   }
 
   function registerWrong(token: WordToken) {
-    dispatch({ type: "wrong" });
     setShakeKey((key) => key + 1); // Trigger the shake animation.
     const wordKey = `${round?.lineIndex ?? ""}:${token.id}`;
     const count = consecutiveMistakes + 1;
     setConsecutiveMistakes(count);
     if (count < 3 || !round) return;
 
+    dispatch({ type: "wrong" });
     dispatch({ type: "revealed", wordKey });
     setRound((previous) => previous && previous.lineIndex === round.lineIndex
       ? {
@@ -423,7 +430,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
         goPrevious();
         return;
       }
-      if (event.key === "ArrowDown") {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         if (!currentLine || !onPlayLine) return;
         event.preventDefault();
         replayCurrentLine();
@@ -568,7 +575,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
         )}
         {onPlayLine && (
           <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" onClick={replayCurrentLine}>
-            <ArrowDown className="size-4" />
+            <ArrowUpDown className="size-4" />
             {t("game.replay")}
           </Button>
         )}
@@ -617,7 +624,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
                   style={{ width: `${Math.min(Math.max(token.core.length, 2), 14)}ch` }}
                   className="inline-flex min-w-8 items-center justify-center px-1 text-center leading-none text-foreground"
                 >
-                  {settings.mode === "first-letter" ? "\u2022".repeat(token.core.length) : "___"}
+                  {settings.mode === "first-letter" ? maskWordPreservingApostrophes(token.core) : "___"}
                 </span>
                 {token.trailing}
               </span>

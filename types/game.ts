@@ -4,7 +4,7 @@
 // ============================== LANGUAGES ==============================
 
 // Language codes follow ISO 639-1. Buttons display the matching short labels.
-export const LANGUAGE_CODES = ["ru", "uk", "en", "pl", "es"] as const;
+export const LANGUAGE_CODES = ["en", "es", "ru", "pl", "uk"] as const;
 export type Language = (typeof LANGUAGE_CODES)[number];
 export const LEARNING_LANGUAGE_CODES = ["en", "pl"] as const;
 export type LearningLanguage = (typeof LEARNING_LANGUAGE_CODES)[number];

@@ -30,7 +30,7 @@ function SongPageContent() {
   const routeVideoId = params.youtube_id;
   const { userId, loading: authLoading } = useAuthState();
   const { t, sourceLanguage } = useLanguage();
-  const [videoId, setVideoId] = useState(DEMO_VIDEO_ID);
+  const videoId = routeVideoId || DEMO_VIDEO_ID;
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
@@ -145,9 +145,8 @@ function SongPageContent() {
     }, 50);
   }, [clearVolumeFade]);
 
-  function showVideo(id: string, newLines: LyricLine[]) {
+  function showVideo(newLines: LyricLine[]) {
     setSongDbId(null);
-    setVideoId(id);
     setLines(newLines);
     setCurrentTime(0);
     setHasPlaybackStarted(false);
@@ -171,7 +170,7 @@ function SongPageContent() {
           if (!transcript || !Array.isArray(transcript.lines_json)) {
             throw new Error(t("home.loadError"));
           }
-          showVideo(id, transcript.lines_json as unknown as LyricLine[]);
+          showVideo(transcript.lines_json as unknown as LyricLine[]);
           setSongDbId(song.id);
           return;
         }
@@ -193,7 +192,7 @@ function SongPageContent() {
       }
 
       const newLines = json as LyricLine[];
-      showVideo(id, newLines);
+      showVideo(newLines);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("home.unknownError"));
     }
@@ -257,7 +256,7 @@ function SongPageContent() {
           </div>
         </div>
 
-        <YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} onPlayingChange={handlePlayingChange} />
+        <YouTubePlayer key={videoId} ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} onPlayingChange={handlePlayingChange} />
 
         <div className={view === "read" ? "mx-auto w-full lg:w-[85%]" : "hidden"}>
           <InteractiveLyrics

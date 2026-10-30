@@ -18,7 +18,6 @@ import SongSearch from "@/components/SongSearch";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; transcripts?: SongTranscript | SongTranscript[] | null };
-type LearningStats = { completedMedia: number; hardCompleted: number; wordsCompleted: number; averageAccuracy: number };
 const contentTypeLabel = (type: ContentType, t: ReturnType<typeof useLanguage>["t"]) => ({ music_video: t("favorites.music"), movie_clip: t("favorites.movieClips"), interview: t("favorites.interviews"), podcast: t("favorites.podcasts"), shorts: t("favorites.shorts"), other: t("favorites.other") })[type];
 export default function DashboardPage() {
   const { userId, loading } = useAuthState();
@@ -26,8 +25,6 @@ export default function DashboardPage() {
   const text = PAGE_TEXT[uiLanguage];
   const metadataLabels = songMetadataLabels(uiLanguage);
   const [songs, setSongs] = useState<Song[]>([]);
-  const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
-  const [learningStatsError, setLearningStatsError] = useState(false);
   const [url, setUrl] = useState("");
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [title, setTitle] = useState("");
@@ -42,11 +39,7 @@ export default function DashboardPage() {
 
   const refresh = useCallback(async () => {
     const db = getSupabaseBrowserClient();
-    if (!db) {
-      setLearningStatsError(true);
-      return;
-    }
-    if (!userId) return;
+    if (!db || !userId) return;
     type DashboardSongRow = { id: string; youtube_id: string; title: string; is_public: boolean; genre: string; difficulty: string; content_type: ContentType; transcripts: SongTranscript | SongTranscript[] | null };
     const query = await db.from("songs").select("id,youtube_id,title,is_public,genre,difficulty,content_type,transcripts(lines_json)").eq("created_by", userId).order("created_at", { ascending: false });
     let rows: DashboardSongRow[];
@@ -67,28 +60,6 @@ export default function DashboardPage() {
         transcripts: transcript ? { lines_json: transcript.lines_json as unknown as LyricLine[] } : null,
       };
     }));
-
-    const progress = await db
-      .from("user_media_progress")
-      .select("media_id,difficulty,accuracy,words_completed,is_completed")
-      .eq("user_id", userId);
-    if (progress.error) {
-      console.error("[dashboard] Could not load learning statistics.", progress.error.code);
-      setLearningStats(null);
-      setLearningStatsError(true);
-      return;
-    }
-    const progressRows = progress.data ?? [];
-    const completedRows = progressRows.filter((row) => row.is_completed);
-    setLearningStats({
-      completedMedia: new Set(completedRows.map((row) => row.media_id)).size,
-      hardCompleted: new Set(completedRows.filter((row) => row.difficulty === "Hard").map((row) => row.media_id)).size,
-      wordsCompleted: progressRows.reduce((sum, row) => sum + row.words_completed, 0),
-      averageAccuracy: progressRows.length
-        ? Math.round(progressRows.reduce((sum, row) => sum + row.accuracy, 0) / progressRows.length)
-        : 0,
-    });
-    setLearningStatsError(false);
   }, [userId]);
   useEffect(() => { void Promise.resolve().then(refresh); }, [refresh]);
 
@@ -132,26 +103,6 @@ export default function DashboardPage() {
   if (!userId) return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10"><SongSearch /><section><h1 className="text-2xl font-bold">{text.mySongs}</h1><p className="mt-3">{text.loginPrompt}</p><Link className="mt-3 inline-block text-primary underline" href="/auth">{text.login}</Link></section></main>;
 
   return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10">
-    <section>
-      <h2 className="mb-4 text-2xl font-semibold">{t("dashboard.learningStats")}</h2>
-      {learningStatsError ? (
-        <p role="alert" className="text-sm text-destructive">{t("dashboard.learningStatsError")}</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            [t("dashboard.completedMedia"), learningStats?.completedMedia ?? "—"],
-            [t("dashboard.hardCompleted"), learningStats?.hardCompleted ?? "—"],
-            [t("dashboard.wordsCompleted"), learningStats?.wordsCompleted ?? "—"],
-            [t("dashboard.averageAccuracy"), learningStats ? `${learningStats.averageAccuracy}%` : "—"],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-xl border bg-card p-4">
-              <p className="text-sm text-muted-foreground">{label}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
     <SongSearch />
     <section><h1 className="text-3xl font-bold">{text.mySongs}</h1><div className="mt-5 grid gap-3 rounded-xl border p-5">
       <h2 className="text-xl font-semibold">{text.addYoutube}</h2>

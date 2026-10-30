@@ -96,7 +96,7 @@ type CardProps = {
 export default function ExplanationCard({ data, streaming = false, actions }: CardProps) {
   return (
     // The tw-animate-css package provides these animation utilities.
-    <div aria-busy={streaming} className="mt-3 space-y-4 rounded-xl border bg-muted/40 p-4 duration-300 animate-in fade-in slide-in-from-top-2 motion-reduce:animate-none">
+    <div aria-busy={streaming} className="mt-3 space-y-4 rounded-xl border bg-muted p-4 duration-300 animate-in fade-in slide-in-from-top-2 motion-reduce:animate-none">
       <ExplanationSections data={data} streaming={streaming} />
       {actions && <div className="flex flex-wrap items-center gap-3 border-t pt-3">{actions}</div>}
     </div>
@@ -132,7 +132,7 @@ export function ExplanationSkeleton() {
     <div
       role="status"
       aria-busy="true"
-      className="mt-3 space-y-4 rounded-xl border bg-muted/40 p-4 animate-pulse motion-reduce:animate-none"
+      className="mt-3 space-y-4 rounded-xl border bg-muted p-4 animate-pulse motion-reduce:animate-none"
     >
       <span className="sr-only">{t("explain.loading")}</span>
       <SkeletonRow lastWidth="w-2/3" />

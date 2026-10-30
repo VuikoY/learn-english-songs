@@ -78,6 +78,11 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   // Save the player instance after it loads.
   const handleReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
+    void event.target
+      .getIframe()
+      .then((iframe: HTMLIFrameElement) =>
+        iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin"),
+      );
   };
 
   // Handle player state changes such as play, pause, buffering, and end.
@@ -103,6 +108,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
           width: "100%",
           height: "100%",
           playerVars: {
+            origin: typeof window === "undefined" ? "" : window.location.origin,
             rel: 0, // Do not show related videos from other channels.
             playsinline: 1, // Keep playback inline on iOS.
           },
