@@ -8,17 +8,29 @@ import { PAGE_TEXT } from "@/lib/i18n/pages";
 import type { LyricLine } from "@/lib/types";
 import { extractVideoId, stripYoutubeUrlExtras } from "@/lib/youtube";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
-import { Combine, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Combine, Loader2, RefreshCw, Sparkles, Split, Trash2 } from "lucide-react";
 import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty, type SongGenre } from "@/lib/songMetadata";
 import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
 import type { Explanation } from "@/lib/types";
 import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 import SongSearch from "@/components/SongSearch";
+import { alignPlainLyrics } from "@/lib/lrclib";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; transcripts?: SongTranscript | SongTranscript[] | null };
+type LyricsSyncResult = { kind: "synced" } | { kind: "plain"; lines: LyricLine[] } | { kind: "notFound" | "providerError" | "alignmentError" | "saveError" };
 const contentTypeLabel = (type: ContentType, t: ReturnType<typeof useLanguage>["t"]) => ({ music_video: t("favorites.music"), movie_clip: t("favorites.movieClips"), interview: t("favorites.interviews"), podcast: t("favorites.podcasts"), shorts: t("favorites.shorts"), other: t("favorites.other") })[type];
+
+function isLyricLines(value: unknown): value is LyricLine[] {
+  return Array.isArray(value) && value.every((line) =>
+    typeof line === "object" && line !== null &&
+    typeof line.text === "string" &&
+    typeof line.start === "number" && Number.isFinite(line.start) && line.start >= 0 &&
+    typeof line.duration === "number" && Number.isFinite(line.duration) && line.duration >= 0,
+  );
+}
+
 export default function DashboardPage() {
   const { userId, loading } = useAuthState();
   const { sourceLanguage, uiLanguage, t } = useLanguage();
@@ -68,15 +80,39 @@ export default function DashboardPage() {
     try {
       const videoId = extractVideoId(url);
       if (!videoId) throw new Error(text.invalidYoutube);
-      const [tr, meta] = await Promise.all([
-        fetch(`/api/transcript?videoId=${videoId}&lang=${sourceLanguage}`),
-        fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`),
-      ]);
-      const lyricData = await tr.json();
-      if (!tr.ok) throw new Error(text.subtitlesUnavailable);
-      const metadata = meta.ok ? await meta.json() : {};
-      const songTitle = typeof metadata.title === "string" ? metadata.title : "";
-      const lyricLines = lyricData as LyricLine[];
+      const meta = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+      const metadata: unknown = meta.ok ? await meta.json() : {};
+      const songTitle = typeof metadata === "object" && metadata !== null && "title" in metadata && typeof metadata.title === "string"
+        ? metadata.title
+        : "";
+      let lyricLines: LyricLine[] | null = null;
+      if (songTitle) {
+        try {
+          const lookup = await fetch(`/api/lrclib?title=${encodeURIComponent(songTitle)}`);
+          if (lookup.ok) {
+            const result: unknown = await lookup.json();
+            if (
+              typeof result === "object" && result !== null && "kind" in result &&
+              result.kind === "synced" && "lines" in result && isLyricLines(result.lines)
+            ) {
+              lyricLines = result.lines;
+            }
+          } else if (lookup.status !== 404) {
+            console.error("[dashboard] Lrclib lookup failed; falling back to YouTube subtitles.", lookup.status);
+          }
+        } catch (error) {
+          console.error("[dashboard] Lrclib lookup failed; falling back to YouTube subtitles.", {
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          });
+        }
+      }
+
+      if (!lyricLines) {
+        const transcript = await fetch(`/api/transcript?videoId=${videoId}&lang=${sourceLanguage}`);
+        const lyricData: unknown = await transcript.json();
+        if (!transcript.ok || !isLyricLines(lyricData)) throw new Error(text.subtitlesUnavailable);
+        lyricLines = lyricData;
+      }
       setLines(lyricLines); setTitle(songTitle);
       setMessage(text.subtitlesReady);
     } catch (error) { setMessage(error instanceof Error ? error.message : text.loadError); }
@@ -94,9 +130,38 @@ export default function DashboardPage() {
     finally { setBusy(false); setSaving(false); }
   }
 
-  async function saveSong(song: Song, editedLines: LyricLine[], editedGenre: SongGenre, editedDifficulty: SongDifficulty, editedContentType: ContentType) {
+  async function saveSong(song: Song, editedLines: LyricLine[], editedGenre: SongGenre, editedDifficulty: SongDifficulty, editedContentType: ContentType): Promise<boolean> {
     const response = await fetch("/api/songs", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: song.id, isPublic: song.is_public, genre: editedGenre, difficulty: editedDifficulty, contentType: editedContentType, lines: editedLines }) });
-    await response.json(); setMessage(response.ok ? text.changesSaved : text.songSaveError); if (response.ok) await refresh();
+    await response.json().catch(() => null);
+    setMessage(response.ok ? text.changesSaved : text.songSaveError);
+    if (response.ok) await refresh();
+    return response.ok;
+  }
+
+  async function syncSongLyrics(song: Song, currentLines: LyricLine[]): Promise<LyricsSyncResult> {
+    try {
+      const response = await fetch(`/api/lrclib?title=${encodeURIComponent(song.title)}`);
+      if (response.status === 404) return { kind: "notFound" };
+      if (!response.ok) return { kind: "providerError" };
+
+      const result: unknown = await response.json();
+      if (typeof result !== "object" || result === null || !("kind" in result)) return { kind: "providerError" };
+      if (result.kind === "synced" && "lines" in result && isLyricLines(result.lines)) {
+        const saved = await saveSong(song, result.lines, song.genre, song.difficulty, song.content_type);
+        return saved ? { kind: "synced" } : { kind: "saveError" };
+      }
+      if (result.kind === "plain" && "plainLyrics" in result && typeof result.plainLyrics === "string") {
+        const aligned = alignPlainLyrics(currentLines, result.plainLyrics);
+        if (!aligned || aligned.confidence < 0.35) return { kind: "alignmentError" };
+        return { kind: "plain", lines: aligned.lines };
+      }
+      return { kind: "notFound" };
+    } catch (error) {
+      console.error("[dashboard] Could not update lyrics from Lrclib.", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      return { kind: "providerError" };
+    }
   }
 
   if (loading) return <main className="mx-auto max-w-5xl p-8">{text.loading}</main>;
@@ -113,24 +178,52 @@ export default function DashboardPage() {
       {lines.length>0&&<input className="rounded border bg-background px-3 py-2" placeholder={text.songTitle} value={title} onChange={event=>setTitle(event.target.value)}/>}
       {message&&<p role="status" className="text-sm text-muted-foreground">{message}</p>}
     </div></section>
-    <section><h2 className="mb-4 text-2xl font-semibold">{text.savedSongs}</h2>{songs.length===0?<p className="text-muted-foreground">{text.emptySongs}</p>:<div className="space-y-3">{songs.map(song=><SongEditor key={song.id} song={song} onSave={saveSong} text={text} uiLanguage={uiLanguage}/>)}</div>}</section>
+    <section><h2 className="mb-4 text-2xl font-semibold">{text.savedSongs}</h2>{songs.length===0?<p className="text-muted-foreground">{text.emptySongs}</p>:<div className="space-y-3">{songs.map(song=><SongEditor key={song.id} song={song} onSave={saveSong} onSync={syncSongLyrics} text={text} uiLanguage={uiLanguage}/>)}</div>}</section>
   </main>;
 }
 
-function SongEditor({ song, onSave, text, uiLanguage }: { song: Song; onSave: (song: Song, lines: LyricLine[], genre: SongGenre, difficulty: SongDifficulty, contentType: ContentType) => Promise<void>; text: (typeof PAGE_TEXT)["ru"]; uiLanguage: keyof typeof PAGE_TEXT }) {
+function SongEditor({ song, onSave, onSync, text, uiLanguage }: { song: Song; onSave: (song: Song, lines: LyricLine[], genre: SongGenre, difficulty: SongDifficulty, contentType: ContentType) => Promise<boolean>; onSync: (song: Song, lines: LyricLine[]) => Promise<LyricsSyncResult>; text: (typeof PAGE_TEXT)["ru"]; uiLanguage: keyof typeof PAGE_TEXT }) {
   const { t } = useLanguage();
   const transcript = Array.isArray(song.transcripts) ? song.transcripts[0] : song.transcripts;
   const [lines,setLines]=useState(transcript?.lines_json??[]); const [isPublic,setIsPublic]=useState(song.is_public); const [open,setOpen]=useState(false); const [saving,setSaving]=useState(false);
+  const [syncing,setSyncing]=useState(false); const [syncMessage,setSyncMessage]=useState("");
   const [genre,setGenre]=useState(song.genre); const [difficulty,setDifficulty]=useState(song.difficulty); const [contentType,setContentType]=useState(song.content_type); const labels=songMetadataLabels(uiLanguage);
   useEffect(() => { queueMicrotask(() => setLines(transcript?.lines_json ?? [])); }, [song.id, transcript]);
   useEffect(() => { queueMicrotask(() => { setGenre(song.genre); setDifficulty(song.difficulty); }); }, [song.genre, song.difficulty]);
   async function handleSave() {
     if (saving) return;
     setSaving(true);
-    try { await onSave({ ...song, is_public: isPublic }, lines, genre, difficulty, contentType); }
+    try {
+      const saved = await onSave({ ...song, is_public: isPublic }, lines, genre, difficulty, contentType);
+      if (saved) setSyncMessage("");
+    }
     finally { setSaving(false); }
   }
-  return <details className="rounded-lg border p-4" onToggle={event=>setOpen(event.currentTarget.open)}><summary className="cursor-pointer font-medium">{song.title} <span className="text-sm text-muted-foreground">({isPublic?text.public:text.private})</span></summary><div className="mt-3 space-y-3"><div className="flex flex-wrap items-center gap-3"><Link className="text-sm text-primary underline" href={`/song/${song.youtube_id}`}>{text.openTrainer}</Link><label className="flex items-center gap-2 whitespace-nowrap text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{t("favorites.category")}</span><select className="h-9 rounded border bg-background px-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.genre}</span><select className="h-9 max-w-52 rounded border bg-background px-2" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{labels.genres[item]}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.difficulty}</span><select className="h-9 rounded border bg-background px-2" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{labels.difficulties[item]}</option>)}</select></label></div>{open&&<TranscriptTimingEditor videoId={song.youtube_id} lines={lines} onLinesChange={setLines}/>}<button disabled={saving} className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSave()}>{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.saveChanges}</button></div></details>;
+  async function handleSync() {
+    if (saving || syncing) return;
+    setSyncing(true); setSyncMessage("");
+    try {
+      const result = await onSync(song, lines);
+      if (result.kind === "plain") {
+        setLines(result.lines);
+        setOpen(true);
+        setSyncMessage(t("lyrics.syncPreview"));
+      } else if (result.kind === "synced") {
+        setSyncMessage(t("lyrics.syncSaved"));
+      } else if (result.kind === "notFound") {
+        setSyncMessage(t("lyrics.syncNotFound"));
+      } else if (result.kind === "alignmentError") {
+        setSyncMessage(t("lyrics.syncAlignmentError"));
+      } else if (result.kind === "saveError") {
+        setSyncMessage(t("lyrics.syncSaveError"));
+      } else {
+        setSyncMessage(t("lyrics.syncProviderError"));
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }
+  return <details open={open} className="rounded-lg border p-4" onToggle={event=>setOpen(event.currentTarget.open)}><summary className="cursor-pointer font-medium">{song.title} <span className="text-sm text-muted-foreground">({isPublic?text.public:text.private})</span></summary><div className="mt-3 space-y-3"><div className="flex flex-wrap items-center gap-3"><Link className="text-sm text-primary underline" href={`/song/${song.youtube_id}`}>{text.openTrainer}</Link><button type="button" disabled={saving||syncing} aria-label={t("lyrics.sync")} title={t("lyrics.sync")} className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSync()}>{syncing?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<RefreshCw className="size-4" aria-hidden="true"/>}{syncing?t("lyrics.syncing"):t("lyrics.sync")}</button><label className="flex items-center gap-2 whitespace-nowrap text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{t("favorites.category")}</span><select className="h-9 rounded border bg-background px-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.genre}</span><select className="h-9 max-w-52 rounded border bg-background px-2" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{labels.genres[item]}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.difficulty}</span><select className="h-9 rounded border bg-background px-2" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{labels.difficulties[item]}</option>)}</select></label></div>{syncMessage&&<p role="status" className="text-sm text-muted-foreground">{syncMessage}</p>}{open&&<TranscriptTimingEditor videoId={song.youtube_id} lines={lines} onLinesChange={setLines}/>}<button disabled={saving||syncing} className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSave()}>{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.saveChanges}</button></div></details>;
 }
 
 function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: string; lines: LyricLine[]; onLinesChange: (lines: LyricLine[]) => void }) {
@@ -191,11 +284,12 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
   return <div className="grid gap-4">
     <section className="space-y-2"><h3 className="font-medium">{t("dashboard.player")}</h3><YouTubePlayer ref={playerRef} videoId={videoId} onTimeUpdate={handleTimeUpdate} onPlayingChange={handlePlaybackChange}/><p className="text-sm text-muted-foreground">{t("dashboard.reviewTiming")}</p><p className="text-xs tabular-nums text-muted-foreground">{formatTimestamp(currentTime)}</p></section>
     <section className="space-y-2">
-      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_7rem] items-center gap-2">
+      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_8rem] items-center gap-2">
         <span />
         <span />
         <div className="flex items-center justify-center gap-1">
           <button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.mergeShortLines")} title={t("dashboard.mergeShortLines")} onClick={() => onLinesChange(mergeShortLines(lines))}><Combine aria-hidden="true" size={16} /></button>
+          <button type="button" disabled={!lines.some((line) => countWords(line.text) > 7)} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.splitLongLines")} title={t("dashboard.splitLongLines")} onClick={() => onLinesChange(splitLongLines(lines))}><Split aria-hidden="true" size={16} /></button>
           <button type="button" disabled={lines.length < 2} className="flex items-center justify-center rounded border p-1.5 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" aria-label={t("dashboard.recalculateDurations")} title={t("dashboard.recalculateDurations")} onClick={() => onLinesChange(lines.map((line, index) => index < lines.length - 1 ? { ...line, duration: Math.max(0, Number((lines[index + 1].start - line.start - 0.1).toFixed(2))) } : line))}><RefreshCw aria-hidden="true" size={16} /></button>
         </div>
       </div>
@@ -270,6 +364,64 @@ function mergeShortLines(lines: LyricLine[]): LyricLine[] {
 
 function countWords(text: string) {
   return text.trim().split(/\s+/u).filter(Boolean).length;
+}
+
+function splitLongLines(lines: LyricLine[]): LyricLine[] {
+  return lines.flatMap((line) => {
+    const words = line.text.trim().split(/\s+/u).filter(Boolean);
+    if (words.length <= 7) return [line];
+
+    const chunks: string[] = [];
+    let remainingWords = words;
+    let remainingChunks = Math.ceil(words.length / 7);
+
+    while (remainingChunks > 1) {
+      const minimumWords = Math.max(1, remainingWords.length - (remainingChunks - 1) * 7);
+      const maximumWords = Math.min(7, remainingWords.length - (remainingChunks - 1));
+      const targetWords = Math.min(maximumWords, Math.max(minimumWords, Math.round(remainingWords.length / remainingChunks)));
+      const punctuationCandidates = Array.from(
+        { length: maximumWords - minimumWords + 1 },
+        (_, index) => minimumWords + index,
+      )
+        .filter((wordCount) => Math.abs(wordCount - targetWords) <= 2)
+        .map((wordCount) => {
+          const ending = remainingWords[wordCount - 1].replace(/["'’”»)\]}]+$/u, "");
+          const punctuationRank = /[.!?…]+$/u.test(ending) ? 2 : /\p{P}$/u.test(ending) ? 1 : 0;
+          return { wordCount, punctuationRank };
+        })
+        .filter((candidate) => candidate.punctuationRank > 0)
+        .sort((a, b) => b.punctuationRank - a.punctuationRank || Math.abs(a.wordCount - targetWords) - Math.abs(b.wordCount - targetWords));
+      const splitAt = punctuationCandidates[0]?.wordCount ?? targetWords;
+
+      chunks.push(remainingWords.slice(0, splitAt).join(" "));
+      remainingWords = remainingWords.slice(splitAt);
+      remainingChunks -= 1;
+    }
+    chunks.push(remainingWords.join(" "));
+
+    const totalCharacters = chunks.reduce((total, chunk) => total + chunk.length, 0);
+    const lineEnd = line.start + line.duration;
+    const lineWithoutTranslations = { ...line };
+    delete lineWithoutTranslations.translations;
+    let elapsedCharacters = 0;
+    let previousBoundary = line.start;
+
+    return chunks.map((text, index) => {
+      const start = index === 0 ? line.start : previousBoundary;
+      elapsedCharacters += text.length;
+      const end = index === chunks.length - 1
+        ? lineEnd
+        : Number((line.start + line.duration * elapsedCharacters / totalCharacters).toFixed(2));
+      previousBoundary = end;
+
+      return {
+        ...lineWithoutTranslations,
+        text,
+        start,
+        duration: Number(Math.max(0, end - start).toFixed(2)),
+      };
+    });
+  });
 }
 
 function updateLineStart(lines: LyricLine[], index: number, start: number): LyricLine[] {

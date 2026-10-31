@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Keyboard, Puzzle, ScrollText } from "lucide-react";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import InteractiveLyrics from "@/components/InteractiveLyrics";
@@ -27,7 +27,10 @@ export default function HomePage() {
 
 function SongPageContent() {
   const params = useParams<{ youtube_id: string }>();
+  const searchParams = useSearchParams();
   const routeVideoId = params.youtube_id;
+  const lyricsTitle = searchParams.get("title")?.trim() ?? "";
+  const lyricsArtist = searchParams.get("artist")?.trim() ?? "";
   const { userId, loading: authLoading } = useAuthState();
   const { t, sourceLanguage } = useLanguage();
   const videoId = routeVideoId || DEMO_VIDEO_ID;
@@ -152,7 +155,7 @@ function SongPageContent() {
     setHasPlaybackStarted(false);
   }
 
-  async function handleLoad(id: string) {
+  async function handleLoad(id: string, title: string, artist: string) {
     setError(null);
     try {
       const db = getSupabaseBrowserClient();
@@ -176,7 +179,10 @@ function SongPageContent() {
         }
       }
 
-      const response = await fetch(`/api/transcript?videoId=${id}&lang=${sourceLanguage}`);
+      const transcriptParams = new URLSearchParams({ videoId: id, lang: sourceLanguage });
+      if (title) transcriptParams.set("title", title);
+      if (artist) transcriptParams.set("artist", artist);
+      const response = await fetch(`/api/transcript?${transcriptParams.toString()}`);
       const raw = await response.text();
       let json: unknown;
       try {
@@ -202,12 +208,12 @@ function SongPageContent() {
   useEffect(() => {
     if (authLoading) return;
     const id = routeVideoId || DEMO_VIDEO_ID;
-    const requestKey = `${id}:${sourceLanguage}:${userId ?? "guest"}`;
+    const requestKey = `${id}:${sourceLanguage}:${userId ?? "guest"}:${lyricsTitle}:${lyricsArtist}`;
     if (initialLoadKeyRef.current === requestKey) return;
     initialLoadKeyRef.current = requestKey;
-    void handleLoad(id);
+    void handleLoad(id, lyricsTitle, lyricsArtist);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, sourceLanguage, routeVideoId, userId]);
+  }, [authLoading, sourceLanguage, routeVideoId, userId, lyricsTitle, lyricsArtist]);
 
   return (
     <main className="mx-auto w-full max-w-6xl py-8">

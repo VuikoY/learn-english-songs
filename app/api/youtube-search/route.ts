@@ -12,6 +12,10 @@ import { isLearningLanguage } from "@/types/game";
 
 export const maxDuration = 30;
 
+const TRANSCRIPT_CHECK_TIMEOUT_MS = 4_000;
+const TRANSCRIPT_CHECK_BATCH_SIZE = 5;
+const MAX_TRANSCRIPT_RESULTS = 5;
+
 type YouTubeVideo = {
   videoId: string;
   title: string;
@@ -28,7 +32,7 @@ async function checkTranscript(videoId: string, language: string): Promise<boole
   try {
     const lines = await YoutubeTranscript.fetchTranscript(videoId, {
       lang: language,
-      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(5_000) }),
+      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(TRANSCRIPT_CHECK_TIMEOUT_MS) }),
     });
     return Array.isArray(lines) && lines.length > 0;
   } catch (error) {
@@ -78,7 +82,7 @@ export async function POST(request: Request) {
   searchUrl.search = new URLSearchParams({
     part: "snippet",
     type: "video",
-    maxResults: "5",
+    maxResults: "20",
     videoEmbeddable: "true",
     order: "relevance",
     q: [body.title.trim(), artist].filter(Boolean).join(" "),
@@ -147,15 +151,17 @@ export async function POST(request: Request) {
     }];
   });
 
-  for (let index = 0; index < videos.length; index += 2) {
-    const batch = videos.slice(index, index + 2);
+  const matchingVideos: YouTubeVideo[] = [];
+  for (let index = 0; index < videos.length && matchingVideos.length < MAX_TRANSCRIPT_RESULTS; index += TRANSCRIPT_CHECK_BATCH_SIZE) {
+    const batch = videos.slice(index, index + TRANSCRIPT_CHECK_BATCH_SIZE);
     const availability = await Promise.all(
       batch.map((video) => checkTranscript(video.videoId, language)),
     );
     batch.forEach((video, batchIndex) => {
       video.transcriptAvailable = availability[batchIndex];
+      if (video.transcriptAvailable === true) matchingVideos.push(video);
     });
   }
 
-  return NextResponse.json({ videos });
+  return NextResponse.json({ videos: matchingVideos.slice(0, MAX_TRANSCRIPT_RESULTS) });
 }

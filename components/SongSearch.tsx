@@ -24,9 +24,7 @@ function isSearchVideo(value: unknown): value is SearchVideo {
     typeof video.title === "string" &&
     typeof video.channelTitle === "string" &&
     (video.thumbnailUrl === null || typeof video.thumbnailUrl === "string") &&
-    (video.transcriptAvailable === true ||
-      video.transcriptAvailable === false ||
-      video.transcriptAvailable === null);
+    video.transcriptAvailable === true;
 }
 
 function isSearchResponse(value: unknown): value is SearchResponse {
@@ -44,9 +42,14 @@ export default function SongSearch() {
   const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searchLanguage, setSearchLanguage] = useState<string | null>(null);
+  const [lyricsSearch, setLyricsSearch] = useState<{ title: string; artist: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestController = useRef<AbortController | null>(null);
   const searchMatchesLanguage = searchLanguage === sourceLanguage;
+  const lyricsSearchParams = new URLSearchParams(lyricsSearch ?? {
+    title: title.trim(),
+    artist: artist.trim(),
+  });
 
   useEffect(() => {
     return () => requestController.current?.abort();
@@ -64,6 +67,7 @@ export default function SongSearch() {
     setHasSearched(false);
     setLoading(true);
     setSearchLanguage(sourceLanguage);
+    setLyricsSearch({ title: title.trim(), artist: artist.trim() });
     const controller = new AbortController();
     requestController.current = controller;
 
@@ -94,7 +98,7 @@ export default function SongSearch() {
         throw new Error(t(errorKey));
       }
       if ("code" in payload) throw new Error(t("search.error.failed"));
-      setVideos(payload.videos.filter((video) => video.transcriptAvailable !== null));
+      setVideos(payload.videos.filter((video) => video.transcriptAvailable === true));
       setHasSearched(true);
     } catch (searchError) {
       if (searchError instanceof Error && searchError.name === "AbortError") return;
@@ -157,15 +161,9 @@ export default function SongSearch() {
               <div className="flex min-w-0 flex-1 flex-col items-start">
                 <h3 className="font-semibold">{video.title}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{video.channelTitle}</p>
-                <p className={`mt-3 text-sm ${video.transcriptAvailable === true ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}`}>
-                  {video.transcriptAvailable === true
-                    ? t("search.transcriptAvailable")
-                    : video.transcriptAvailable === false
-                      ? t("search.transcriptUnavailable")
-                      : t("search.transcriptUnknown")}
-                </p>
+                <p className="mt-3 text-sm text-green-700 dark:text-green-400">{t("search.transcriptAvailable")}</p>
                 <div className="mt-auto flex flex-wrap gap-3 pt-4">
-                  <Link href={`/song/${video.videoId}`} className={buttonVariants({ size: "sm" })}>{t("search.study")}</Link>
+                  <Link href={`/song/${video.videoId}?${lyricsSearchParams.toString()}`} className={buttonVariants({ size: "sm" })}>{t("search.study")}</Link>
                   <a
                     href={`https://www.youtube.com/watch?v=${video.videoId}`}
                     target="_blank"
