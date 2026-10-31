@@ -27,11 +27,11 @@ export default function FavoritesNavLink() {
     }
     const db = getSupabaseBrowserClient();
     if (!db) return;
-    const [media, lines] = await Promise.all([
-      db.from("user_favorites").select("song_id", { count: "exact", head: true }).eq("user_id", userId),
-      db.from("favorite_lines").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    ]);
-    if (!media.error && !lines.error) setCount((media.count ?? 0) + (lines.count ?? 0));
+    const { count: mediaCount, error } = await db
+      .from("user_favorites")
+      .select("song_id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if (!error) setCount(mediaCount ?? 0);
   }, [loading, userId]);
 
   useEffect(() => {

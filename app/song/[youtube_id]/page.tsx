@@ -269,7 +269,7 @@ function SongPageContent() {
             lines={lines}
             currentTime={currentTime}
           youtubeId={videoId}
-            songId={songDbId}
+
             onSeek={playFrom}
             onExplainStart={pausePlayer}
           />

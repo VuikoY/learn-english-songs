@@ -5,11 +5,20 @@ export type Database = {
   
   "public": {
           Tables: {
-            "favorite_lines": {
-              Row: { id: string; user_id: string; song_id: string; line_index: number; line_text: string; start_time: number; end_time: number; created_at: string }
-              Insert: { id?: string; user_id: string; song_id: string; line_index: number; line_text: string; start_time: number; end_time: number; created_at?: string }
-              Update: { id?: string; user_id?: string; song_id?: string; line_index?: number; line_text?: string; start_time?: number; end_time?: number; created_at?: string }
-              Relationships: [{ foreignKeyName: "favorite_lines_song_id_fkey"; columns: ["song_id"]; isOneToOne: false; referencedRelation: "songs"; referencedColumns: ["id"] }]
+            "collection_items": {
+              Row: { id: string; collection_id: string; user_id: string; song_id: string; line_text: string; start_time: number; end_time: number; created_at: string }
+              Insert: { id?: string; collection_id: string; user_id: string; song_id: string; line_text: string; start_time: number; end_time: number; created_at?: string }
+              Update: { id?: string; collection_id?: string; user_id?: string; song_id?: string; line_text?: string; start_time?: number; end_time?: number; created_at?: string }
+              Relationships: [
+                { foreignKeyName: "collection_items_collection_id_fkey"; columns: ["collection_id"]; isOneToOne: false; referencedRelation: "word_collections"; referencedColumns: ["id"] },
+                { foreignKeyName: "collection_items_song_id_fkey"; columns: ["song_id"]; isOneToOne: false; referencedRelation: "songs"; referencedColumns: ["id"] }
+              ]
+            }
+            "word_collections": {
+              Row: { id: string; user_id: string; title: string; is_public: boolean; created_at: string }
+              Insert: { id?: string; user_id: string; title: string; is_public?: boolean; created_at?: string }
+              Update: { id?: string; user_id?: string; title?: string; is_public?: boolean; created_at?: string }
+              Relationships: []
             }
             "line_explanations": {
                   Row: {
@@ -33,14 +42,14 @@ isOneToOne: false
                   ]
                 },"songs": {
                   Row: {
-                    "content_type": string,"created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"thumbnail_url": string | null,"title": string,"youtube_id": string
+                    "artist": string | null,"content_type": string,"created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"thumbnail_url": string | null,"title": string,"youtube_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
+                    "artist"?: string | null,"content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
                   }
                   Update: {
-                    "content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
+                    "artist"?: string | null,"content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
                   }
                   Relationships: [
                     
@@ -139,6 +148,22 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
+            "search_song_content": {
+              Args: { search_query: string; source_language: string; result_limit?: number }
+              Returns: {
+                result_kind: string
+                song_id: string
+                youtube_id: string
+                title: string
+                artist: string | null
+                thumbnail_url: string | null
+                line_text: string | null
+                context: string | null
+                line_index: number | null
+                start_time: number | null
+                end_time: number | null
+              }[]
+            }
             "get_learning_leaderboard": {
               Args: Record<PropertyKey, never>
               Returns: {

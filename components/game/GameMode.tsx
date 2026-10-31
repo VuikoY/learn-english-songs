@@ -18,7 +18,6 @@ import WordBank from "@/components/game/WordBank";
 import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 import { useLanguage } from "@/context/LanguageContext";
-import FavoriteLineButton from "@/components/FavoriteLineButton";
 import {
   buildRound,
   buildWordPool,
@@ -731,9 +730,6 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
             );
           })}
         </p>
-        <div className="w-6 shrink-0">
-          <FavoriteLineButton songId={songId} lineIndex={round.lineIndex} lineText={currentLine.text} startTime={currentLine.start} endTime={currentLine.start + currentLine.duration}/>
-        </div>
         </div>
         {expandedTranslationKey === currentTranslationKey && (
           <div className="mt-3 rounded bg-muted/50 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">

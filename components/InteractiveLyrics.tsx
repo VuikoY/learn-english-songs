@@ -8,7 +8,6 @@ import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/co
 import { useLanguage } from "@/context/LanguageContext";
 import type { Explanation, LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
-import FavoriteLineButton from "@/components/FavoriteLineButton";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 
 type Props = {
@@ -21,7 +20,6 @@ type Props = {
   onExplainStart?: () => void;
   /** The current song ID lets the server use its Supabase explanation cache. */
   youtubeId?: string;
-  songId?: string | null;
 };
 
 // Explanation panel state for one lyric line.
@@ -75,7 +73,6 @@ export default function InteractiveLyrics({
   onSeek,
   onExplainStart,
   youtubeId,
-  songId,
 }: Props) {
   // Explanation panel state for each line (loading, error, or open).
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
@@ -276,9 +273,6 @@ export default function InteractiveLyrics({
                   >
                     <Play className="size-4 fill-current" aria-hidden="true"/>
                   </Button>
-                  {(showAllLines || isActive) && (
-                    <FavoriteLineButton songId={songId} lineIndex={index} lineText={line.text} startTime={line.start} endTime={line.start + line.duration}/>
-                  )}
                 </div>
                 <div
                   className={`min-w-0 flex-1 overflow-hidden px-1 text-center text-base font-medium leading-snug md:px-2 md:text-lg md:whitespace-nowrap ${isActive ? "text-foreground" : "text-muted-foreground"}`}
