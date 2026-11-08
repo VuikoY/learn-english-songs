@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const metadataLabels = songMetadataLabels(uiLanguage);
   const [songs, setSongs] = useState<Song[]>([]);
   const [url, setUrl] = useState("");
+  const urlInputRef = useRef<HTMLInputElement>(null);
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
@@ -50,6 +51,15 @@ export default function DashboardPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const previewVideoId = extractVideoId(url);
+
+  function selectVideoUrl(videoUrl: string) {
+    setUrl(videoUrl);
+    setLines([]);
+    setTitle("");
+    setArtist("");
+    setMessage("");
+    urlInputRef.current?.focus();
+  }
 
   const refresh = useCallback(async () => {
     const db = getSupabaseBrowserClient();
@@ -189,13 +199,13 @@ export default function DashboardPage() {
   }
 
   if (loading) return <main className="mx-auto max-w-5xl p-8">{text.loading}</main>;
-  if (!userId) return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10"><SongSearch /><section><h1 className="text-2xl font-bold">{text.mySongs}</h1><p className="mt-3">{text.loginPrompt}</p><Link className="mt-3 inline-block text-primary underline" href="/auth">{text.login}</Link></section></main>;
+  if (!userId) return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10"><SongSearch onSelectVideoUrl={selectVideoUrl} /><section><h1 className="text-2xl font-bold">{text.mySongs}</h1><p className="mt-3">{text.loginPrompt}</p><Link className="mt-3 inline-block text-primary underline" href="/auth">{text.login}</Link></section></main>;
 
   return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10">
-    <SongSearch />
+    <SongSearch onSelectVideoUrl={selectVideoUrl} />
     <section><h1 className="text-3xl font-bold">{text.mySongs}</h1><div className="mt-5 grid gap-3 rounded-xl border p-5">
       <h2 className="text-xl font-semibold">{text.addYoutube}</h2>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><input className="min-w-0 flex-1 rounded border bg-background px-3 py-2" placeholder={text.youtubeUrl} value={url} onChange={event => setUrl(stripYoutubeUrlExtras(event.target.value))}/><label className="grid gap-1 text-sm"><span>{t("favorites.category")}</span><select aria-label={t("favorites.category")} className="rounded border bg-background px-3 py-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex shrink-0 items-center gap-2 text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><button disabled={busy||!url} onClick={fetchPreview} className="shrink-0 rounded border px-4 py-2 disabled:opacity-50">{text.loadSubtitles}</button></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><input ref={urlInputRef} aria-label={text.youtubeUrl} className="min-w-0 flex-1 rounded border bg-background px-3 py-2" placeholder={text.youtubeUrl} value={url} onChange={event => setUrl(stripYoutubeUrlExtras(event.target.value))}/><label className="grid gap-1 text-sm"><span>{t("favorites.category")}</span><select aria-label={t("favorites.category")} className="rounded border bg-background px-3 py-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex shrink-0 items-center gap-2 text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><button disabled={busy||!url} onClick={fetchPreview} className="shrink-0 rounded border px-4 py-2 disabled:opacity-50">{text.loadSubtitles}</button></div>
       {lines.length > 0 && <div className="grid max-w-xl grid-cols-1 gap-3"><label className="grid gap-1 text-sm"><span>{metadataLabels.genre}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{metadataLabels.genres[item]}</option>)}</select></label><label className="grid gap-1 text-sm"><span>{metadataLabels.difficulty}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{metadataLabels.difficulties[item]}</option>)}</select></label></div>}
       {lines.length>0&&<button disabled={saving} onClick={save} className="inline-flex items-center gap-2 rounded bg-primary px-4 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60">{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.save}</button>}
       {previewVideoId && <TranscriptTimingEditor videoId={previewVideoId} lines={lines} onLinesChange={setLines}/>}
@@ -270,6 +280,7 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
   const previousTimeRef = useRef(0);
   const latestTimeRef = useRef(0);
   const autoPausedLineRef = useRef<number | null>(null);
+  const selectedPauseTargetRef = useRef<{ lineIndex: number; endTime: number } | null>(null);
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const streamExplanation = useStreamingExplanation();
   const [currentTime, setCurrentTime] = useState(0);
@@ -282,12 +293,18 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
     setCurrentTime(seconds);
     if (!isPlayingRef.current) return;
 
-    const endedLineIndex = lines.findIndex((line) => {
-      const end = line.start + line.duration + AUDIO_END_BUFFER_SECONDS;
-      return previousTime < end && seconds >= end && seconds - previousTime <= 1;
-    });
+    const selectedTarget = selectedPauseTargetRef.current;
+    const endedLineIndex = selectedTarget
+      ? previousTime < selectedTarget.endTime && seconds >= selectedTarget.endTime
+        ? selectedTarget.lineIndex
+        : -1
+      : lines.findIndex((line) => {
+          const end = line.start + line.duration + AUDIO_END_BUFFER_SECONDS;
+          return previousTime < end && seconds >= end;
+        });
     if (endedLineIndex >= 0 && autoPausedLineRef.current !== endedLineIndex) {
       autoPausedLineRef.current = endedLineIndex;
+      selectedPauseTargetRef.current = null;
       playerRef.current?.pause();
     }
   }, [lines]);
@@ -350,7 +367,7 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
               <div key={index} className="min-w-0 space-y-1">
                 <div className="flex min-w-0 items-center gap-1">
                   <div className="flex w-fit shrink-0 items-center gap-1">
-                    <button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-xs hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("dashboard.seekToLine")} ${index + 1}`} onClick={() => { autoPausedLineRef.current = null; playerRef.current?.seekTo(Math.max(0, line.start - AUDIO_START_BUFFER_SECONDS)); playerRef.current?.play(); }}>▶</button>
+                    <button type="button" className="flex h-8 shrink-0 items-center justify-center rounded border px-0 text-xs hover:bg-muted" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }} aria-label={`${t("dashboard.seekToLine")} ${index + 1}`} onClick={() => { autoPausedLineRef.current = null; selectedPauseTargetRef.current = { lineIndex: index, endTime: line.start + line.duration + AUDIO_END_BUFFER_SECONDS }; playerRef.current?.seekTo(Math.max(0, line.start - AUDIO_START_BUFFER_SECONDS)); playerRef.current?.play(); }}>▶</button>
                     <input aria-label={t("dashboard.start")} className="h-8 shrink-0 rounded border bg-background px-1 text-xs" style={{ width: "4rem", minWidth: "4rem", maxWidth: "4rem" }} type="number" min="0" step="0.1" value={emptyLineInputs[index]?.start ? "" : line.start} onChange={event => {
                       setEmptyLineInputs((current) => ({ ...current, [index]: { ...current[index], start: false } }));
                       onLinesChange(updateLineStart(lines, index, Number(event.target.value)));

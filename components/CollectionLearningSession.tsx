@@ -8,7 +8,7 @@ import SnippetPlayer, { type SnippetPlayerHandle } from "@/components/SnippetPla
 import { useLanguage } from "@/context/LanguageContext";
 import { countHideableWords } from "@/lib/game/buildRound";
 import { usePersistentState } from "@/lib/storage/usePersistentState";
-import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
+import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { DIFFICULTIES, type Difficulty, type GameSettings } from "@/types/game";
 import type { LyricLine } from "@/lib/types";
 
@@ -26,22 +26,19 @@ type View = "read" | "play";
 type TimelineEntry = {
   line: LyricLine;
   item: CollectionLearningItem;
-  playerStart: number;
 };
 
 function createTimeline(items: CollectionLearningItem[]): TimelineEntry[] {
   let nextStart = 0;
   return items.map((item): TimelineEntry => {
-    const playerStart = Math.max(0, item.startTime - AUDIO_START_BUFFER_SECONDS);
-    const playerEnd = item.endTime + AUDIO_END_BUFFER_SECONDS;
-    const duration = Math.max(0.1, playerEnd - playerStart);
+    const duration = Math.max(0, item.endTime - item.startTime);
     const line: LyricLine = {
       text: item.lineText,
       start: nextStart,
       duration,
     };
     nextStart += duration + AUDIO_END_BUFFER_SECONDS;
-    return { line, item, playerStart };
+    return { line, item };
   });
 }
 
@@ -113,7 +110,7 @@ export default function CollectionLearningSession({ items }: Props) {
   const handleTimeUpdate = useCallback((itemPosition: number, playerTime: number) => {
     const entry = timeline[itemPosition];
     if (!entry) return;
-    setCurrentTime(entry.line.start + Math.max(0, playerTime - entry.playerStart));
+    setCurrentTime(entry.line.start + playerTime - entry.item.startTime);
   }, [timeline]);
 
   const handleClipEnded = useCallback((itemPosition: number) => {

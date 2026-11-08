@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ExternalLink } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -34,7 +33,7 @@ function isSearchResponse(value: unknown): value is SearchResponse {
   return Array.isArray(payload.videos) && payload.videos.every(isSearchVideo);
 }
 
-export default function SongSearch() {
+export default function SongSearch({ onSelectVideoUrl }: { onSelectVideoUrl: (url: string) => void }) {
   const { sourceLanguage, t } = useLanguage();
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
@@ -164,14 +163,13 @@ export default function SongSearch() {
                 <p className="mt-3 text-sm text-green-700 dark:text-green-400">{t("search.transcriptAvailable")}</p>
                 <div className="mt-auto flex flex-wrap gap-3 pt-4">
                   <Link href={`/song/${video.videoId}?${lyricsSearchParams.toString()}`} className={buttonVariants({ size: "sm" })}>{t("search.study")}</Link>
-                  <a
-                    href={`https://www.youtube.com/watch?v=${video.videoId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={buttonVariants({ variant: "outline", size: "sm", className: "gap-1.5" })}
+                  <button
+                    type="button"
+                    onClick={() => onSelectVideoUrl(`https://www.youtube.com/watch?v=${video.videoId}`)}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
                   >
-                    {t("search.watch")} <ExternalLink className="size-3.5" aria-hidden="true" />
-                  </a>
+                    {t("search.useUrl")}
+                  </button>
                 </div>
               </div>
             </article>

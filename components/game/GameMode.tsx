@@ -29,6 +29,7 @@ import {
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
 import type { Explanation, LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
+import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import {
   DIFFICULTIES,
   HIDE_RATIO,
@@ -285,7 +286,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
 
     // Keep the line tied to the song timeline, but pause at its boundary if
     // the learner has not filled every blank yet.
-    const lineBoundary = nextLineStart === undefined ? lineEnd : Math.min(lineEnd, nextLineStart);
+    const lineBoundary = lineEnd + AUDIO_END_BUFFER_SECONDS;
     if (!isRoundComplete && currentTime >= lineBoundary) {
       if (pauseRequestedRoundRef.current !== round) {
         pauseRequestedRoundRef.current = round;
@@ -311,7 +312,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       return;
     }
 
-    if (position === playable.length - 1 && currentTime >= lineEnd) {
+    if (position === playable.length - 1 && currentTime >= lineEnd + AUDIO_END_BUFFER_SECONDS) {
       onPause?.();
       queueMicrotask(() => setPhase("finished"));
     }
