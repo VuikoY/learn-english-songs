@@ -20,6 +20,8 @@ type Props = {
   onExplainStart?: () => void;
   /** The current song ID lets the server use its Supabase explanation cache. */
   youtubeId?: string;
+  /** Resolves media IDs when a playlist line belongs to a different video. */
+  getLineYoutubeId?: (lineIndex: number) => string | undefined;
 };
 
 // Explanation panel state for one lyric line.
@@ -73,6 +75,7 @@ export default function InteractiveLyrics({
   onSeek,
   onExplainStart,
   youtubeId,
+  getLineYoutubeId,
 }: Props) {
   // Explanation panel state for each line (loading, error, or open).
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
@@ -166,7 +169,7 @@ export default function InteractiveLyrics({
         text: line.text,
         sourceLang: sourceLanguage,
         targetLang: targetLanguage,
-        ...(youtubeId ? { videoId: youtubeId, lineIndex: index } : {}),
+        ...(!getLineYoutubeId && youtubeId ? { videoId: youtubeId, lineIndex: index } : {}),
       });
       setLineTranslations((previous) => ({ ...previous, [id]: translation }));
       setLineTranslationStates((previous) => {
@@ -201,7 +204,7 @@ export default function InteractiveLyrics({
       let databaseExplanation: Explanation | null = null;
       try {
         databaseExplanation = await readExplanationCache({
-          youtubeId,
+          youtubeId: getLineYoutubeId ? undefined : youtubeId,
           lineIndex: index,
           text: line.text,
           sourceLanguage,
@@ -217,8 +220,10 @@ export default function InteractiveLyrics({
       }
       const explanation = await streamExplanation({
           text: line.text,
-          youtubeId,
-          lineIndex: index,
+          ...(getLineYoutubeId?.(index) ?? youtubeId
+            ? { youtubeId: getLineYoutubeId?.(index) ?? youtubeId }
+            : {}),
+          ...(!getLineYoutubeId ? { lineIndex: index } : {}),
           context: lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" "),
           sourceLanguage,
           targetLanguage,

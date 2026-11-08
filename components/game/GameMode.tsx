@@ -44,11 +44,15 @@ type Props = {
   lines: LyricLine[];
   currentTime: number;
   youtubeId?: string;
+  getLineYoutubeId?: (lineIndex: number) => string | undefined;
   songId?: string | null;
   /** Seeks to a song line and starts playback. */
-  onPlayLine?: (startSeconds: number) => void;
-  /** Starts a one-second fade out and pauses playback. */
-  onPauseAfterFade?: () => void;
+  onPlayLine?: (startSeconds: number, lineIndex: number) => void;
+  onStart?: (startSeconds: number, lineIndex: number) => void;
+  /** Called when playback reaches the next line without an explicit seek. */
+  onAutoAdvance?: (lineIndex: number, startSeconds: number) => void;
+  /** Pauses playback after the current line's audio buffer. */
+  onPauseAtBoundary?: () => void;
   onPause?: () => void;
   settings: GameSettings;
   onDifficultyChange: (difficulty: Difficulty) => void;
@@ -68,7 +72,7 @@ function maskWordPreservingApostrophes(word: string): string {
   ).join("");
 }
 
-export default function GameMode({ lines, currentTime, youtubeId, songId, onPlayLine, onPauseAfterFade, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const streamExplanation = useStreamingExplanation();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
@@ -87,7 +91,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   const [position, setPosition] = useState(0); // Position among playable lines.
   const [consecutiveMistakes, setConsecutiveMistakes] = useState(0);
   const [progressStatus, setProgressStatus] = useState<"idle" | "saving" | "saved" | "error" | "sign-in">("idle");
-  const fadeStartedRoundRef = useRef<Round | null>(null);
+  const pauseRequestedRoundRef = useRef<Round | null>(null);
   const progressSavedRef = useRef(false);
   const [shakeKey, setShakeKey] = useState(0); // Increment to trigger the error shake animation.
 
@@ -132,11 +136,12 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
   const currentLineTranslation = currentLine
     ? currentLine.translations?.[targetLanguage] ?? lineTranslations[currentTranslationKey]
     : undefined;
+  const currentLineYoutubeId = round ? getLineYoutubeId?.(round.lineIndex) ?? youtubeId : youtubeId;
 
   const startRound = useCallback((nextPosition: number, activeSettings: GameSettings = settings) => {
     const entry = playable[nextPosition];
     if (!entry) return;
-    fadeStartedRoundRef.current = null;
+    pauseRequestedRoundRef.current = null;
     setConsecutiveMistakes(0);
     setPosition(nextPosition);
     setRound(buildRound(entry.index, entry.line.text, activeSettings, wordPool));
@@ -183,7 +188,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       let databaseExplanation: Explanation | null = null;
       try {
         databaseExplanation = await readExplanationCache({
-          youtubeId,
+          youtubeId: getLineYoutubeId ? undefined : youtubeId,
           lineIndex: round!.lineIndex,
           text: currentLine.text,
           sourceLanguage,
@@ -200,8 +205,8 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       }
       const result = await streamExplanation({
           text: currentLine.text,
-          youtubeId,
-          lineIndex: round!.lineIndex,
+          ...(currentLineYoutubeId ? { youtubeId: currentLineYoutubeId } : {}),
+          ...(!getLineYoutubeId ? { lineIndex: round!.lineIndex } : {}),
           context,
           sourceLanguage,
           targetLanguage,
@@ -233,7 +238,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
           text: currentLine.text,
           sourceLang: sourceLanguage,
           targetLang: targetLanguage,
-          ...(youtubeId ? { videoId: youtubeId, lineIndex: round.lineIndex } : {}),
+          ...(!getLineYoutubeId && youtubeId ? { videoId: youtubeId, lineIndex: round.lineIndex } : {}),
         }),
       });
       const result: unknown = await response.json().catch(() => null);
@@ -282,9 +287,9 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     // the learner has not filled every blank yet.
     const lineBoundary = nextLineStart === undefined ? lineEnd : Math.min(lineEnd, nextLineStart);
     if (!isRoundComplete && currentTime >= lineBoundary) {
-      if (fadeStartedRoundRef.current !== round) {
-        fadeStartedRoundRef.current = round;
-        onPauseAfterFade?.();
+      if (pauseRequestedRoundRef.current !== round) {
+        pauseRequestedRoundRef.current = round;
+        onPauseAtBoundary?.();
       }
       return;
     }
@@ -298,7 +303,11 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       while (timePosition + 1 < playable.length && currentTime >= playable[timePosition + 1].line.start) {
         timePosition += 1;
       }
-      queueMicrotask(() => startRound(timePosition));
+      const nextEntry = playable[timePosition];
+      queueMicrotask(() => {
+        startRound(timePosition);
+        if (nextEntry) onAutoAdvance?.(nextEntry.index, nextEntry.line.start);
+      });
       return;
     }
 
@@ -306,7 +315,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       onPause?.();
       queueMicrotask(() => setPhase("finished"));
     }
-  }, [active, currentTime, currentLine, isRoundComplete, onPauseAfterFade, onPause, phase, playable, position, round, startRound]);
+  }, [active, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, round, startRound]);
 
   useEffect(() => {
     if (phase !== "finished" || !songId || progressSavedRef.current) return;
@@ -349,6 +358,8 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     startRound(0);
     setPhase("playing");
     onPause?.();
+    const firstLine = playable[0];
+    if (firstLine) onStart?.(firstLine.line.start, firstLine.index);
   }
 
   useEffect(() => {
@@ -357,7 +368,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
 
     if (phase === "playing" && round) {
       handledStartRequestRef.current = startRequest;
-      onPlayLine?.(currentLine?.start ?? playable[position].line.start);
+      onPlayLine?.(currentLine?.start ?? playable[position].line.start, round?.lineIndex ?? playable[position].index);
       return;
     }
     if (!hasPlaybackStarted) return;
@@ -379,7 +390,7 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
       setProgressStatus("idle");
       startRound(startPosition);
       setPhase("playing");
-      onPlayLine?.(playable[startPosition].line.start);
+      onPlayLine?.(playable[startPosition].line.start, playable[startPosition].index);
     });
   }, [active, currentLine, currentTime, hasPlaybackStarted, onPlayLine, phase, playable, position, round, startRequest, startRound]);
 
@@ -389,12 +400,12 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     const previousLine = playable[previousPosition]?.line;
     if (!previousLine) return;
     startRound(previousPosition);
-    onPlayLine?.(previousLine.start);
+    onPlayLine?.(previousLine.start, playable[previousPosition].index);
   }, [onPlayLine, playable, position, startRound]);
   const replayCurrentLine = useCallback(() => {
     if (!currentLine || !onPlayLine) return;
-    onPlayLine(currentLine.start);
-  }, [currentLine, onPlayLine]);
+    onPlayLine(currentLine.start, round?.lineIndex ?? position);
+  }, [currentLine, onPlayLine, position, round?.lineIndex]);
 
   function quitToSetup() {
     setRound(null);
@@ -410,9 +421,9 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     dispatch({ type: "correct", wordKey });
     setConsecutiveMistakes(0);
     const hiddenCount = round?.tokens.filter((token) => token.hidden).length ?? 0;
-    if (round && round.filledIds.length + 1 >= hiddenCount && phase === "playing" && fadeStartedRoundRef.current === round) {
+    if (round && round.filledIds.length + 1 >= hiddenCount && phase === "playing" && pauseRequestedRoundRef.current === round) {
       const nextEntry = playable[position + 1];
-      if (nextEntry) onPlayLine?.(nextEntry.line.start);
+      if (nextEntry) onPlayLine?.(nextEntry.line.start, nextEntry.index);
     }
     setRound((prev) =>
       prev
@@ -446,9 +457,9 @@ export default function GameMode({ lines, currentTime, youtubeId, songId, onPlay
     setConsecutiveMistakes(0);
 
     const hiddenCount = round.tokens.filter((item) => item.hidden).length;
-    if (round.filledIds.length + 1 >= hiddenCount && phase === "playing" && fadeStartedRoundRef.current === round) {
+    if (round.filledIds.length + 1 >= hiddenCount && phase === "playing" && pauseRequestedRoundRef.current === round) {
       const nextEntry = playable[position + 1];
-      if (nextEntry) onPlayLine?.(nextEntry.line.start);
+      if (nextEntry) onPlayLine?.(nextEntry.line.start, nextEntry.index);
     }
   }
 

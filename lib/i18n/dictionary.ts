@@ -97,6 +97,7 @@ const ru = {
   "nav.collections": "Коллекции",
   "nav.learningStats": "Статистика обучения",
   "collections.title": "Коллекции",
+  "collections.myCollections": "Мои коллекции",
   "collections.loading": "Загрузка коллекций…",
   "collections.empty": "Коллекций пока нет. Создайте первую.",
   "collections.publicEmpty": "Публичных коллекций пока нет.",
@@ -106,6 +107,7 @@ const ru = {
   "collections.loadError": "Не удалось загрузить коллекции.",
   "collections.open": "Открыть",
   "collections.noItems": "В этой коллекции пока нет фрагментов.",
+  "collections.manageItems": "Управление фрагментами",
   "collections.removeItem": "Удалить фрагмент из коллекции",
   "collections.removeError": "Не удалось удалить фрагмент.",
   "collections.itemProgress": "Фрагмент {current} из {total}",
@@ -270,6 +272,7 @@ const ru = {
   "dashboard.recalculateDurations": "Пересчитать длительность по следующей строке",
   "dashboard.mergeShortLines": "Объединить короткие строки",
   "dashboard.splitLongLines": "Разбить длинные строки",
+  "dashboard.addLine": "Добавить строку",
 } as const;
 
 export type TranslationKey = keyof typeof ru;
@@ -338,7 +341,7 @@ const en: Dictionary = {
   "game.difficulty.hard.desc": "All words hidden",
   "game.start": "Start game",
   "game.line": "Line {current} of {total}",
-  "game.replay": "Replay line",
+  "game.replay": "Listen to line",
   "game.next": "Next line",
   "game.previous": "Previous line",
   "game.finish": "Finish",
@@ -367,6 +370,7 @@ const en: Dictionary = {
   "nav.collections": "Collections",
   "nav.learningStats": "Learning statistics",
   "collections.title": "Collections",
+  "collections.myCollections": "My collections",
   "collections.loading": "Loading collections…",
   "collections.empty": "You don’t have any collections yet. Create your first one.",
   "collections.publicEmpty": "There are no public collections yet.",
@@ -376,6 +380,7 @@ const en: Dictionary = {
   "collections.loadError": "Could not load collections.",
   "collections.open": "Open",
   "collections.noItems": "There are no snippets in this collection yet.",
+  "collections.manageItems": "Manage snippets",
   "collections.removeItem": "Remove snippet from collection",
   "collections.removeError": "Could not remove the snippet.",
   "collections.itemProgress": "Snippet {current} of {total}",
@@ -540,6 +545,7 @@ const en: Dictionary = {
   "dashboard.recalculateDurations": "Recalculate durations from the next line",
   "dashboard.mergeShortLines": "Merge short lines",
   "dashboard.splitLongLines": "Split long lines",
+  "dashboard.addLine": "Add line",
 };
 
 const pl: Dictionary = {
@@ -605,7 +611,7 @@ const pl: Dictionary = {
   "game.difficulty.hard.desc": "Ukrywamy wszystkie słowa",
   "game.start": "Zacznij grę",
   "game.line": "Wers {current} z {total}",
-  "game.replay": "Odtwórz wers",
+  "game.replay": "Posłuchaj wersu",
   "game.next": "Następny wers",
   "game.previous": "Poprzedni wers",
   "game.finish": "Zakończ",
@@ -634,6 +640,7 @@ const pl: Dictionary = {
   "nav.collections": "Kolekcje",
   "nav.learningStats": "Statystyki nauki",
   "collections.title": "Kolekcje",
+  "collections.myCollections": "Moje kolekcje",
   "collections.loading": "Wczytywanie kolekcji…",
   "collections.empty": "Nie masz jeszcze kolekcji. Utwórz pierwszą.",
   "collections.publicEmpty": "Nie ma jeszcze publicznych kolekcji.",
@@ -643,6 +650,7 @@ const pl: Dictionary = {
   "collections.loadError": "Nie udało się wczytać kolekcji.",
   "collections.open": "Otwórz",
   "collections.noItems": "W tej kolekcji nie ma jeszcze fragmentów.",
+  "collections.manageItems": "Zarządzaj fragmentami",
   "collections.removeItem": "Usuń fragment z kolekcji",
   "collections.removeError": "Nie udało się usunąć fragmentu.",
   "collections.itemProgress": "Fragment {current} z {total}",
@@ -807,6 +815,7 @@ const pl: Dictionary = {
   "dashboard.recalculateDurations": "Przelicz czas na podstawie następnego wersu",
   "dashboard.mergeShortLines": "Połącz krótkie wersy",
   "dashboard.splitLongLines": "Podziel długie wersy",
+  "dashboard.addLine": "Dodaj wers",
 };
 
 const es: Dictionary = {
@@ -872,7 +881,7 @@ const es: Dictionary = {
   "game.difficulty.hard.desc": "Ocultamos todas las palabras",
   "game.start": "Empezar juego",
   "game.line": "Línea {current} de {total}",
-  "game.replay": "Repetir línea",
+  "game.replay": "Escuchar línea",
   "game.next": "Siguiente línea",
   "game.previous": "Línea anterior",
   "game.finish": "Terminar",
@@ -901,6 +910,7 @@ const es: Dictionary = {
   "nav.collections": "Colecciones",
   "nav.learningStats": "Estadísticas de aprendizaje",
   "collections.title": "Colecciones",
+  "collections.myCollections": "Mis colecciones",
   "collections.loading": "Cargando colecciones…",
   "collections.empty": "Aún no tienes colecciones. Crea la primera.",
   "collections.publicEmpty": "Aún no hay colecciones públicas.",
@@ -910,6 +920,7 @@ const es: Dictionary = {
   "collections.loadError": "No se pudieron cargar las colecciones.",
   "collections.open": "Abrir",
   "collections.noItems": "Esta colección aún no tiene fragmentos.",
+  "collections.manageItems": "Administrar fragmentos",
   "collections.removeItem": "Eliminar fragmento de la colección",
   "collections.removeError": "No se pudo eliminar el fragmento.",
   "collections.itemProgress": "Fragmento {current} de {total}",
@@ -1074,6 +1085,7 @@ const es: Dictionary = {
   "dashboard.recalculateDurations": "Recalcular la duración según la siguiente línea",
   "dashboard.mergeShortLines": "Unir líneas cortas",
   "dashboard.splitLongLines": "Dividir líneas largas",
+  "dashboard.addLine": "Añadir línea",
 };
 
 const uk: Dictionary = {
@@ -1122,11 +1134,11 @@ const uk: Dictionary = {
   "lang.settings": "Мови", "lang.ui": "Мова інтерфейсу", "lang.target": "Рідна мова", "lang.source": "Мова, яку я вивчаю",
   "game.mode.label": "Режим гри", "game.mode.fillBlanks": "Заповнити пропуски", "game.mode.fillBlanks.desc": "Обирайте слова з набору в правильному порядку", "game.mode.firstLetter": "Перша літера", "game.mode.firstLetter.desc": "Натисніть першу літеру наступного слова",
   "game.difficulty.label": "Складність", "game.difficulty.easy": "Легко", "game.difficulty.easy.desc": "Приховано 15% слів", "game.difficulty.medium": "Середньо", "game.difficulty.medium.desc": "Приховано 35% слів", "game.difficulty.hard": "Складно", "game.difficulty.hard.desc": "Приховано всі слова",
-  "game.start": "Почати гру", "game.line": "Рядок {current} із {total}", "game.replay": "Повторити рядок", "game.next": "Наступний рядок", "game.previous": "Попередній рядок", "game.finish": "Завершити", "game.quit": "Вийти", "game.lineComplete": "Рядок пройдено!", "game.wordBank": "Набір слів", "game.hiddenWord": "Приховане слово", "game.results": "Результати", "game.accuracy": "Точність", "game.playAgain": "Зіграти ще раз", "game.noLines": "У цьому відео замало рядків для гри. Спробуйте інше відео.",
+  "game.start": "Почати гру", "game.line": "Рядок {current} із {total}", "game.replay": "Прослухати рядок", "game.next": "Наступний рядок", "game.previous": "Попередній рядок", "game.finish": "Завершити", "game.quit": "Вийти", "game.lineComplete": "Рядок пройдено!", "game.wordBank": "Набір слів", "game.hiddenWord": "Приховане слово", "game.results": "Результати", "game.accuracy": "Точність", "game.playAgain": "Зіграти ще раз", "game.noLines": "У цьому відео замало рядків для гри. Спробуйте інше відео.",
   "game.words": "Слова", "game.wordProgress": "Прогрес заповнення слів", "game.mistakesRemaining": "Помилок до автоматичного показу слова: {count}",
   "game.completed": "Пройдено!", "game.completionQualified": "Медіа пройдено з точністю не нижче 80%.", "game.completionNotQualified": "Для зарахування потрібна точність не нижче 80%.",
   "game.wordsFilled": "Заповнено слів", "game.mistakes": "Помилки", "game.progressSaving": "Зберігаємо результат навчання…", "game.progressSaved": "Результат навчання збережено.", "game.progressSaveError": "Не вдалося зберегти результат навчання. Спробуйте пізніше.", "game.progressSignInRequired": "Увійдіть в обліковий запис, щоб зберегти результат навчання.",
-  "nav.favorites": "Обране", "nav.collections": "Колекції", "nav.learningStats": "Статистика навчання", "collections.title": "Колекції", "collections.loading": "Завантаження колекцій…", "collections.empty": "Колекцій ще немає. Створіть першу.", "collections.publicEmpty": "Публічних колекцій поки немає.", "collections.newName": "Назва нової колекції", "collections.create": "Створити колекцію", "collections.createError": "Не вдалося створити колекцію.", "collections.loadError": "Не вдалося завантажити колекції.", "collections.open": "Відкрити", "collections.noItems": "У цій колекції ще немає фрагментів.", "collections.removeItem": "Видалити фрагмент із колекції", "collections.removeError": "Не вдалося видалити фрагмент.", "collections.itemProgress": "Фрагмент {current} із {total}", "collections.instruction": "Прослухайте відеофрагмент і заповніть текст у вибраному режимі.", "collections.textInstruction": "Читайте текст і слухайте фрагмент.", "collections.answer": "Введіть рядок із фрагмента", "collections.check": "Перевірити", "collections.replay": "Повторити фрагмент", "collections.playSnippet": "Відтворити фрагмент", "collections.waitForEnd": "Дочекайтеся завершення фрагмента, перш ніж продовжити.", "collections.incorrect": "Не зовсім правильно. Спробуйте ще раз або прослухайте фрагмент.", "collections.correct": "Правильно!", "collections.complete": "Усі фрагменти пройдено!", "collections.nextPhrase": "Наступна фраза", "collections.phraseComplete": "Фразу пройдено!", "collections.firstLetterInput": "Введіть першу літеру наступного слова", "collections.playerError": "Не вдалося завантажити цей відеофрагмент.", "collections.publicBadge": "Публічна", "collections.privateBadge": "Приватна", "collections.makePublic": "Зробити публічною", "collections.makePrivate": "Зробити приватною", "collections.visibilityPrivate": "Цю колекцію бачите лише ви.", "collections.visibilityPublic": "Ця колекція видима всім.", "collections.visibilityError": "Не вдалося змінити видимість колекції.", "collections.copyLink": "Копіювати посилання", "collections.linkCopied": "Посилання скопійовано.", "collections.linkCopyError": "Не вдалося скопіювати посилання.", "favorites.title": "Моє обране", "favorites.loading": "Завантаження обраного…", "favorites.empty": "Ви ще не додали улюбленого медіа.", "favorites.browse": "Перейти до каталогу медіа", "favorites.add": "Додати в обране", "favorites.remove": "Прибрати з обраного",
+  "nav.favorites": "Обране", "nav.collections": "Колекції", "nav.learningStats": "Статистика навчання", "collections.title": "Колекції", "collections.myCollections": "Мої колекції", "collections.loading": "Завантаження колекцій…", "collections.empty": "Колекцій ще немає. Створіть першу.", "collections.publicEmpty": "Публічних колекцій поки немає.", "collections.newName": "Назва нової колекції", "collections.create": "Створити колекцію", "collections.createError": "Не вдалося створити колекцію.", "collections.loadError": "Не вдалося завантажити колекції.", "collections.open": "Відкрити", "collections.noItems": "У цій колекції ще немає фрагментів.", "collections.removeItem": "Видалити фрагмент із колекції", "collections.removeError": "Не вдалося видалити фрагмент.", "collections.itemProgress": "Фрагмент {current} із {total}", "collections.instruction": "Прослухайте відеофрагмент і заповніть текст у вибраному режимі.", "collections.textInstruction": "Читайте текст і слухайте фрагмент.", "collections.answer": "Введіть рядок із фрагмента", "collections.check": "Перевірити", "collections.replay": "Повторити фрагмент", "collections.playSnippet": "Відтворити фрагмент", "collections.waitForEnd": "Дочекайтеся завершення фрагмента, перш ніж продовжити.", "collections.incorrect": "Не зовсім правильно. Спробуйте ще раз або прослухайте фрагмент.", "collections.correct": "Правильно!", "collections.complete": "Усі фрагменти пройдено!", "collections.nextPhrase": "Наступна фраза", "collections.phraseComplete": "Фразу пройдено!", "collections.firstLetterInput": "Введіть першу літеру наступного слова", "collections.playerError": "Не вдалося завантажити цей відеофрагмент.", "collections.publicBadge": "Публічна", "collections.privateBadge": "Приватна", "collections.makePublic": "Зробити публічною", "collections.makePrivate": "Зробити приватною", "collections.visibilityPrivate": "Цю колекцію бачите лише ви.", "collections.visibilityPublic": "Ця колекція видима всім.", "collections.visibilityError": "Не вдалося змінити видимість колекції.", "collections.copyLink": "Копіювати посилання", "collections.linkCopied": "Посилання скопійовано.", "collections.linkCopyError": "Не вдалося скопіювати посилання.", "favorites.title": "Моє обране", "favorites.loading": "Завантаження обраного…", "favorites.empty": "Ви ще не додали улюбленого медіа.", "favorites.browse": "Перейти до каталогу медіа", "favorites.add": "Додати в обране", "favorites.remove": "Прибрати з обраного",
   "favorites.savedMedia": "Збережене медіа ({count})", "favorites.category": "Категорія", "favorites.all": "Усі", "favorites.music": "Пісні", "favorites.movieClips": "Фрагменти фільмів", "favorites.interviews": "Інтерв’ю", "favorites.podcasts": "Подкасти", "favorites.shorts": "Короткі відео", "favorites.other": "Інше", "catalog.transcriptStats": "📄 {words} слів", "catalog.averageAccuracy": "Точність проходження: {percent}%", "catalog.completedBadge": "✓ Пройдено", "favorites.lyricsThree": "3 рядки", "favorites.lyricsAll": "Показати весь текст",
   "auth.title.signin": "Вхід", "auth.title.signup": "Створити обліковий запис", "auth.google": "Продовжити з Google", "auth.email": "Електронна пошта", "auth.password": "Пароль", "auth.showPassword": "Показати", "auth.hidePassword": "Приховати", "auth.submit.signin": "Увійти", "auth.submit.signup": "Створити обліковий запис", "auth.toggle.signup": "Створити обліковий запис", "auth.toggle.signin": "Вже маєте обліковий запис? Увійдіть",
   "auth.reset": "Встановити або відновити пароль", "auth.reset.emailRequired": "Введіть email, щоб отримати інструкції зі встановлення пароля.", "auth.reset.sent": "Якщо обліковий запис із цією адресою існує, надійде лист для встановлення або відновлення пароля.", "auth.reset.mismatch": "Паролі не збігаються.", "auth.reset.updated": "Пароль оновлено. Переходимо до застосунку…", "auth.reset.error": "Не вдалося встановити пароль. Відкрийте посилання з листа ще раз або запросіть нове.", "auth.reset.title": "Встановити пароль", "auth.reset.newPassword": "Новий пароль", "auth.reset.confirmPassword": "Підтвердьте пароль", "auth.reset.save": "Зберегти пароль",
@@ -1147,6 +1159,8 @@ const uk: Dictionary = {
   "lyrics.syncSaveError": "Не вдалося зберегти оновлений текст.",
   "dashboard.leaderboard": "Таблиця лідерів", "dashboard.leaderboardRank": "Місце", "dashboard.leaderboardLearner": "Учень", "dashboard.leaderboardLoading": "Завантаження таблиці лідерів…", "dashboard.leaderboardEmpty": "Поки немає результатів для таблиці лідерів.", "dashboard.leaderboardError": "Не вдалося завантажити таблицю лідерів.",
   "dashboard.splitLongLines": "Розділити довгі рядки",
+  "dashboard.addLine": "Додати рядок",
+  "collections.manageItems": "Керування фрагментами",
 };
 
 export const DICTIONARY: Record<Language, Dictionary> = { ru, uk, en, pl, es };

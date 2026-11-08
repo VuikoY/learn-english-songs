@@ -2,13 +2,18 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import YouTube, { type YouTubeEvent, type YouTubeProps, type YouTubePlayer as YTPlayer } from "react-youtube";
+import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
 
-export type SnippetPlayerHandle = { replay: () => void };
+export type SnippetPlayerHandle = { replay: () => void; pause: () => void; restart: () => void };
 
 type Props = {
+  itemId: string;
   videoId: string;
   startTime: number;
   endTime: number;
+  autoPlay?: boolean;
+  onTimeUpdate: (seconds: number) => void;
+  onPlayingChange: (isPlaying: boolean) => void;
   onEnded: () => void;
   onError: () => void;
 };
@@ -18,55 +23,96 @@ const STATE_PLAYING = 1;
 const POLL_INTERVAL_MS = 100;
 
 const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPlayer(
-  { videoId, startTime, endTime, onEnded, onError },
+  { itemId, videoId, startTime, endTime, autoPlay = true, onTimeUpdate, onPlayingChange, onEnded, onError },
   ref,
 ) {
+  const bufferedStartTime = Math.max(0, startTime - AUDIO_START_BUFFER_SECONDS);
+  const bufferedEndTime = endTime + AUDIO_END_BUFFER_SECONDS;
   const playerRef = useRef<YTPlayer | null>(null);
   const endedRef = useRef(false);
+  const loadedItemIdRef = useRef<string | null>(null);
   const onEndedRef = useRef(onEnded);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onErrorRef = useRef(onError);
   const [isPlaying, setIsPlaying] = useState(false);
   onEndedRef.current = onEnded;
+  onTimeUpdateRef.current = onTimeUpdate;
+  onErrorRef.current = onError;
 
   const finishSnippet = useCallback(() => {
     if (endedRef.current) return;
     endedRef.current = true;
     playerRef.current?.pauseVideo();
-    playerRef.current?.seekTo(endTime, true);
+    playerRef.current?.seekTo(bufferedEndTime, true);
     setIsPlaying(false);
+    onTimeUpdateRef.current(bufferedEndTime);
     onEndedRef.current();
-  }, [endTime]);
+  }, [bufferedEndTime]);
+
+  const loadSnippet = useCallback((player: YTPlayer) => {
+    endedRef.current = false;
+    loadedItemIdRef.current = itemId;
+    onTimeUpdateRef.current(bufferedStartTime);
+    setIsPlaying(false);
+    const options = { videoId, startSeconds: bufferedStartTime, endSeconds: bufferedEndTime };
+    if (autoPlay) player.loadVideoById(options);
+    else player.cueVideoById(options);
+  }, [autoPlay, bufferedEndTime, bufferedStartTime, itemId, videoId]);
 
   useImperativeHandle(ref, () => ({
     replay: () => {
       const player = playerRef.current;
       if (!player) return;
       endedRef.current = false;
-      player.seekTo(startTime, true);
+      player.seekTo(bufferedStartTime, true);
       player.playVideo();
     },
-  }), [startTime]);
+    pause: () => playerRef.current?.pauseVideo(),
+    restart: () => {
+      const player = playerRef.current;
+      if (!player) return;
+      endedRef.current = false;
+      player.seekTo(bufferedStartTime, true);
+      player.pauseVideo();
+      onTimeUpdateRef.current(bufferedStartTime);
+    },
+  }), [bufferedStartTime]);
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || loadedItemIdRef.current === itemId) return;
+    loadSnippet(player);
+  }, [itemId, loadSnippet]);
 
   useEffect(() => {
     if (!isPlaying) return;
+    let polling = false;
     const timerId = window.setInterval(() => {
       const player = playerRef.current;
-      if (!player || endedRef.current) return;
-      if (player.getCurrentTime() >= endTime) finishSnippet();
+      if (!player || endedRef.current || polling) return;
+      polling = true;
+      try {
+        const currentTime = player.getCurrentTime();
+        onTimeUpdateRef.current(currentTime);
+        if (currentTime >= bufferedEndTime) finishSnippet();
+      } catch {
+        onErrorRef.current();
+      } finally {
+        polling = false;
+      }
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timerId);
-  }, [endTime, finishSnippet, isPlaying]);
+  }, [bufferedEndTime, finishSnippet, isPlaying]);
 
   function handleReady(event: YouTubeEvent) {
     playerRef.current = event.target;
-    void event.target.getIframe().then((iframe: HTMLIFrameElement) =>
-      iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin"),
-    );
-    event.target.seekTo(startTime, true);
-    event.target.playVideo();
+    event.target.getIframe().setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    loadSnippet(event.target);
   }
 
   function handleStateChange(event: YouTubeEvent<number>) {
     setIsPlaying(event.data === STATE_PLAYING);
+    onPlayingChange(event.data === STATE_PLAYING);
     if (event.data === STATE_ENDED) finishSnippet();
   }
 
@@ -75,20 +121,16 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
     height: "100%",
     playerVars: {
       autoplay: 0,
-      controls: 0,
+      controls: 1,
       disablekb: 1,
-      end: Math.ceil(endTime),
-      origin: typeof window === "undefined" ? "" : window.location.origin,
       playsinline: 1,
       rel: 0,
-      start: Math.ceil(startTime),
     },
   };
 
   return (
     <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
       <YouTube
-        videoId={videoId}
         className="h-full w-full"
         iframeClassName="h-full w-full"
         opts={opts}

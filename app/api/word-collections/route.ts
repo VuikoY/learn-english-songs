@@ -11,7 +11,7 @@ async function getAccountClient() {
   return { db, user };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const db = await createSupabaseServerClient();
   if (!db) return NextResponse.json({ code: "SERVICE_UNAVAILABLE" }, { status: 503 });
   const { data: { user }, error: authError } = await db.auth.getUser();
@@ -20,13 +20,23 @@ export async function GET() {
     return NextResponse.json({ code: "COLLECTIONS_FAILED" }, { status: 500 });
   }
   const account = user && !user.is_anonymous ? user : null;
-
+  const scope = new URL(request.url).searchParams.get("scope");
+  if (scope !== null && scope !== "public" && scope !== "mine") {
+    return NextResponse.json({ code: "INVALID_SCOPE" }, { status: 400 });
+  }
   let query = db
     .from("word_collections")
     .select("id,title,is_public,user_id,created_at");
-  query = account
-    ? query.or(`is_public.eq.true,user_id.eq.${account.id}`)
-    : query.eq("is_public", true);
+  if (scope === "public") {
+    query = query.eq("is_public", true);
+  } else if (scope === "mine") {
+    if (!account) return NextResponse.json({ code: "AUTH_REQUIRED" }, { status: 401 });
+    query = query.eq("user_id", account.id);
+  } else if (account) {
+    query = query.or(`is_public.eq.true,user_id.eq.${account.id}`);
+  } else {
+    query = query.eq("is_public", true);
+  }
   const { data, error: queryError } = await query.order("created_at", { ascending: false });
   if (queryError) {
     console.error("[api/word-collections] Could not list collections", { code: queryError.code });

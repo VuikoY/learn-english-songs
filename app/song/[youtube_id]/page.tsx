@@ -2,10 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { Keyboard, Puzzle, ScrollText } from "lucide-react";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import InteractiveLyrics from "@/components/InteractiveLyrics";
 import GameMode from "@/components/game/GameMode";
+import LearningModeControls from "@/components/LearningModeControls";
 import { useLanguage } from "@/context/LanguageContext";
 import { DEMO_VIDEO_ID } from "@/lib/mock-lyrics";
 import { countHideableWords } from "@/lib/game/buildRound";
@@ -14,6 +14,7 @@ import { usePersistentState } from "@/lib/storage/usePersistentState";
 import { DIFFICULTIES, type GameSettings } from "@/types/game";
 import { useAuthState } from "@/context/AuthContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
 
 type View = "read" | "play";
 
@@ -70,8 +71,6 @@ function SongPageContent() {
   const [error, setError] = useState<string | null>(null);
 
   const playerRef = useRef<PlayerHandle>(null);
-  const volumeFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const normalVolumeRef = useRef<number | null>(null);
   const updateGameProgress = useCallback((current: number, total: number) => {
     setGameProgress((previous) =>
       previous.current === current && previous.total === total ? previous : { current, total },
@@ -83,37 +82,9 @@ function SongPageContent() {
     setGameStartRequest((request) => request + 1);
   }, [setGameSettings, setView]);
 
-  const clearVolumeFade = useCallback(() => {
-    if (volumeFadeRef.current !== null) {
-      clearInterval(volumeFadeRef.current);
-      volumeFadeRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => clearVolumeFade, [clearVolumeFade]);
-
   const pausePlayer = useCallback(() => {
-    clearVolumeFade();
-    if (normalVolumeRef.current !== null) playerRef.current?.setVolume(normalVolumeRef.current);
     playerRef.current?.pause();
-  }, [clearVolumeFade]);
-  const fadeOutAndPause = useCallback(() => {
-    const player = playerRef.current;
-    if (!player) return;
-
-    clearVolumeFade();
-    if (normalVolumeRef.current === null) normalVolumeRef.current = player.getVolume();
-    const startVolume = player.getVolume();
-    const fadeStartedAt = performance.now();
-    volumeFadeRef.current = setInterval(() => {
-      const progress = Math.min((performance.now() - fadeStartedAt) / 1000, 1);
-      player.setVolume(Math.round(startVolume * (1 - progress)));
-      if (progress >= 1) {
-        clearVolumeFade();
-        player.pause();
-      }
-    }, 50);
-  }, [clearVolumeFade]);
+  }, []);
   const handlePlayingChange = useCallback((isPlaying: boolean) => {
     if (isPlaying) setHasPlaybackStarted(true);
   }, []);
@@ -132,21 +103,9 @@ function SongPageContent() {
     const player = playerRef.current;
     if (!player) return;
 
-    clearVolumeFade();
-    if (normalVolumeRef.current === null) normalVolumeRef.current = player.getVolume();
-    const normalVolume = normalVolumeRef.current;
-
-    player.setVolume(0);
-    player.seekTo(Math.max(0, seconds - 1));
+    player.seekTo(Math.max(0, seconds - AUDIO_START_BUFFER_SECONDS));
     player.play();
-
-    const fadeStartedAt = performance.now();
-    volumeFadeRef.current = setInterval(() => {
-      const progress = Math.min((performance.now() - fadeStartedAt) / 1000, 1);
-      player.setVolume(Math.round(normalVolume * progress));
-      if (progress >= 1) clearVolumeFade();
-    }, 50);
-  }, [clearVolumeFade]);
+  }, []);
 
   function showVideo(newLines: LyricLine[]) {
     setSongDbId(null);
@@ -220,47 +179,17 @@ function SongPageContent() {
       {error && <p role="alert" className="mx-auto mb-3 w-full text-sm text-destructive lg:w-[65%]">{error}</p>}
 
       <div className="mx-auto mt-3 flex w-full flex-col gap-3 lg:w-[65%]">
-        <div className="flex flex-col gap-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("game.mode.label")}>
-              <button
-                type="button"
-                aria-pressed={view === "read"}
-                onClick={() => {
-                  pausePlayer();
-                  setView("read");
-                }}
-                className={`flex h-9 items-center gap-2 rounded border px-3 text-xs text-left transition-all duration-200 ${view === "read" ? "scale-[1.03] border-primary bg-primary font-bold text-primary-foreground shadow-lg ring-2 ring-primary/50" : "border-border bg-card font-medium text-muted-foreground hover:border-primary/60 hover:bg-muted"}`}
-              >
-                <ScrollText className="size-4" />
-                {t("nav.read")}
-              </button>
-                <button
-                  type="button"
-                  aria-pressed={view === "play" && gameSettings.mode === "fill-blanks"}
-                  onClick={() => chooseGameMode("fill-blanks")}
-                  className={`flex h-9 items-center gap-2 rounded border px-3 text-xs text-left transition-all duration-200 ${view === "play" && gameSettings.mode === "fill-blanks" ? "scale-[1.03] border-primary bg-primary font-bold text-primary-foreground shadow-lg ring-2 ring-primary/50" : "border-border bg-card font-medium text-muted-foreground hover:border-primary/60 hover:bg-muted"}`}
-                >
-                  <Puzzle className="size-4" />
-                  {t("game.mode.fillBlanks")}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={view === "play" && gameSettings.mode === "first-letter"}
-                  onClick={() => chooseGameMode("first-letter")}
-                  className={`flex h-9 items-center gap-2 rounded border px-3 text-xs text-left transition-all duration-200 ${view === "play" && gameSettings.mode === "first-letter" ? "scale-[1.03] border-primary bg-primary font-bold text-primary-foreground shadow-lg ring-2 ring-primary/50" : "border-border bg-card font-medium text-muted-foreground hover:border-primary/60 hover:bg-muted"}`}
-                >
-                  <Keyboard className="size-4" />
-                  {t("game.mode.firstLetter")}
-                </button>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {t("game.line", { ...gameProgress, current: view === "read" ? readLinePosition : gameProgress.current })}
-            </p>
-          </div>
-        </div>
+        <LearningModeControls
+          view={view}
+          gameMode={gameSettings.mode}
+          progress={gameProgress}
+          readProgress={readLinePosition}
+          onRead={() => {
+            pausePlayer();
+            setView("read");
+          }}
+          onGameMode={chooseGameMode}
+        />
 
         <YouTubePlayer key={videoId} ref={playerRef} videoId={videoId} onTimeUpdate={setCurrentTime} onPlayingChange={handlePlayingChange} />
 
@@ -275,7 +204,7 @@ function SongPageContent() {
           />
         </div>
         <div className={view === "play" ? "" : "hidden"}>
-          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAfterFade={fadeOutAndPause} onPause={pausePlayer} />
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAtBoundary={pausePlayer} onPause={pausePlayer} />
         </div>
       </div>
     </main>

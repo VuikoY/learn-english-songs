@@ -46,7 +46,7 @@ export default function SaveLineToCollectionButton({ songId, lineText, startTime
     if (open || !userId || collections.length > 0) return;
     setLoading(true);
     try {
-      const response = await fetch("/api/word-collections");
+      const response = await fetch("/api/word-collections?scope=mine");
       const payload: unknown = await response.json().catch(() => null);
       if (response.status === 401) {
         setStatus("auth");

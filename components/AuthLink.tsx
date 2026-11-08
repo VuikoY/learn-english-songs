@@ -48,7 +48,8 @@ export default function AuthLink() {
     <div className="absolute right-0 z-50 mt-2 w-52 rounded-xl border bg-background p-1.5 shadow-lg">
       <Link href="/auth/reset-password" onClick={() => menuRef.current?.removeAttribute("open")} className="block rounded-md px-3 py-2 text-sm hover:bg-muted">{text.changePassword}</Link>
       <Link href="/dashboard" onClick={() => menuRef.current?.removeAttribute("open")} className="block rounded-md px-3 py-2 text-sm hover:bg-muted">{text.mySongs}</Link>
-      <Link href="/dashboard/stats" onClick={() => menuRef.current?.removeAttribute("open")} className="ml-3 block rounded-md border-l px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">{t("nav.learningStats")}</Link>
+      <Link href="/my-collections" onClick={() => menuRef.current?.removeAttribute("open")} className="block rounded-md px-3 py-2 text-sm hover:bg-muted">{t("collections.myCollections")}</Link>
+      <Link href="/learning-stats" onClick={() => menuRef.current?.removeAttribute("open")} className="block rounded-md px-3 py-2 text-sm hover:bg-muted">{t("nav.learningStats")}</Link>
       <button type="button" onClick={() => void signOut()} className="block w-full rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-muted">{text.signOut}</button>
     </div>
   </details>;

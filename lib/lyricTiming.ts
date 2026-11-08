@@ -1,0 +1,2 @@
+export const AUDIO_START_BUFFER_SECONDS = 0.1;
+export const AUDIO_END_BUFFER_SECONDS = 0.2;
