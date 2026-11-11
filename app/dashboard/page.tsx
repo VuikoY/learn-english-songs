@@ -8,12 +8,9 @@ import { PAGE_TEXT } from "@/lib/i18n/pages";
 import type { LyricLine } from "@/lib/types";
 import { extractVideoId, stripYoutubeUrlExtras } from "@/lib/youtube";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
-import { Combine, Loader2, Plus, RefreshCw, Sparkles, Split, Trash2 } from "lucide-react";
+import { Combine, Globe, Loader2, Plus, RefreshCw, Split, Trash2 } from "lucide-react";
 import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty, type SongGenre } from "@/lib/songMetadata";
-import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
-import type { Explanation } from "@/lib/types";
 import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
-import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 import SongSearch from "@/components/SongSearch";
 import { alignPlainLyrics } from "@/lib/lrclib";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
@@ -282,9 +279,8 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
   const autoPausedLineRef = useRef<number | null>(null);
   const selectedPauseTargetRef = useRef<{ lineIndex: number; endTime: number } | null>(null);
   const { t, sourceLanguage, targetLanguage } = useLanguage();
-  const streamExplanation = useStreamingExplanation();
   const [currentTime, setCurrentTime] = useState(0);
-  const [explanations, setExplanations] = useState<Record<string, { loading: boolean; explanation?: Explanation; partial?: Partial<Explanation>; error?: string }>>({});
+  const [lineTranslations, setLineTranslations] = useState<Record<string, { loading: boolean; expanded: boolean; translation?: string; error?: string }>>({});
   const [emptyLineInputs, setEmptyLineInputs] = useState<Record<number, { start?: boolean; duration?: boolean }>>({});
   const handleTimeUpdate = useCallback((seconds: number) => {
     const previousTime = previousTimeRef.current;
@@ -316,24 +312,45 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
     }
   }, []);
 
-  async function explainLine(index: number) {
+  async function translateLine(index: number) {
     const line = lines[index];
-    const key = `${index}:${line.start}:${line.text}`;
-    if (explanations[key]?.explanation) {
-      setExplanations((current) => { const next = { ...current }; delete next[key]; return next; });
+    const key = `${index}:${line.start}:${targetLanguage}:${line.text}`;
+    if (lineTranslations[key]?.expanded) {
+      setLineTranslations((current) => ({ ...current, [key]: { ...current[key], expanded: false } }));
+      return;
+    }
+    if (lineTranslations[key]?.translation) {
+      setLineTranslations((current) => ({ ...current, [key]: { ...current[key], expanded: true } }));
       return;
     }
     playerRef.current?.pause();
-    setExplanations((current) => ({ ...current, [key]: { loading: true } }));
+    setLineTranslations((current) => ({ ...current, [key]: { loading: true, expanded: true } }));
     try {
-    const context = lines.slice(Math.max(0, index - 1), index + 2).filter((_, i) => i !== index - Math.max(0, index - 1)).map((item) => item.text).join(" ");
-    const explanation = await streamExplanation(
-      { text: line.text, youtubeId: videoId, lineIndex: index, context, sourceLanguage, targetLanguage },
-      (partial) => setExplanations((current) => ({ ...current, [key]: { loading: true, partial } })),
-    );
-    setExplanations((current) => ({ ...current, [key]: { loading: false, explanation } }));
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: line.text, sourceLang: sourceLanguage, targetLang: targetLanguage }),
+      });
+      const result: unknown = await response.json().catch(() => null);
+      const payload = typeof result === "object" && result !== null
+        ? result as { translation?: unknown; error?: unknown }
+        : null;
+      if (!response.ok || typeof payload?.translation !== "string" || !payload.translation.trim()) {
+        const code = typeof payload?.error === "string" ? payload.error : "";
+        const errorMessage = code === "unsupported_language"
+          ? t("lyrics.translationUnsupported")
+          : code === "invalid_request"
+            ? t("lyrics.translationInvalid")
+            : t("lyrics.translationError");
+        setLineTranslations((current) => ({ ...current, [key]: { loading: false, expanded: true, error: errorMessage } }));
+        return;
+      }
+      setLineTranslations((current) => ({ ...current, [key]: { loading: false, expanded: true, translation: payload.translation as string } }));
     } catch (error) {
-      setExplanations((current) => ({ ...current, [key]: { loading: false, error: error instanceof Error ? error.message : t("explain.unknownError") } }));
+      console.error("[dashboard] Could not translate an edited subtitle line.", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      setLineTranslations((current) => ({ ...current, [key]: { loading: false, expanded: true, error: t("lyrics.translationError") } }));
     }
   }
 
@@ -361,8 +378,8 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
       {lines.length ? (
         <div className="max-h-[26rem] space-y-2 overflow-auto">
           {lines.map((line, index) => {
-            const key = `${index}:${line.start}:${line.text}`;
-            const state = explanations[key];
+            const key = `${index}:${line.start}:${targetLanguage}:${line.text}`;
+            const translation = lineTranslations[key];
             return (
               <div key={index} className="min-w-0 space-y-1">
                 <div className="flex min-w-0 items-center gap-1">
@@ -401,12 +418,16 @@ function TranscriptTimingEditor({ videoId, lines, onLinesChange }: { videoId: st
                       })));
                       onLinesChange(lines.filter((_, i) => i !== index));
                     }}><Trash2 aria-hidden="true" size={16} /></button>
-                    <button type="button" disabled={state?.loading} className="flex h-8 shrink-0 items-center gap-1 rounded border px-2 text-xs hover:bg-muted disabled:opacity-50" onClick={() => void explainLine(index)}>{state?.loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}{state?.explanation ? t("explain.hide") : t("explain.button")}</button>
+                    <button type="button" disabled={translation?.loading} className="flex h-8 shrink-0 items-center justify-center rounded border p-1.5 hover:bg-muted disabled:opacity-50" title={translation?.loading ? t("lyrics.translationLoading") : translation?.expanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-label={translation?.loading ? t("lyrics.translationLoading") : translation?.expanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-expanded={Boolean(translation?.expanded)} onClick={() => void translateLine(index)}>{translation?.loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}</button>
                   </div>
                 </div>
-                {state?.loading && (state.partial ? <StreamingExplanation data={state.partial} /> : <ExplanationSkeleton />)}
-                {state?.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}
-                {state?.explanation && <ExplanationCard data={state.explanation} />}
+                {translation?.expanded && (
+                  <div className="ml-[5.5rem] rounded bg-muted/50 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
+                    {translation.loading && t("lyrics.translationLoading")}
+                    {translation.error && <p role="alert" className="text-destructive">{translation.error}</p>}
+                    {translation.translation && <p>{translation.translation}</p>}
+                  </div>
+                )}
               </div>
             );
           })}

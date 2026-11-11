@@ -9,6 +9,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import type { Explanation, LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
+import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
 
 type Props = {
   lines: LyricLine[];
@@ -22,6 +23,12 @@ type Props = {
   youtubeId?: string;
   /** Resolves media IDs when a playlist line belongs to a different video. */
   getLineYoutubeId?: (lineIndex: number) => string | undefined;
+  songId?: string | null;
+  canEdit?: boolean;
+  getLineEditContext?: (lineIndex: number) => QuickEditContext | undefined;
+  onPause?: () => void;
+  onEditPlayLine?: (seconds: number, lineIndex: number, duration: number) => void;
+  onLineSaved?: (save: QuickEditLineSave) => void;
 };
 
 // Explanation panel state for one lyric line.
@@ -76,6 +83,12 @@ export default function InteractiveLyrics({
   onExplainStart,
   youtubeId,
   getLineYoutubeId,
+  songId,
+  canEdit = false,
+  getLineEditContext,
+  onPause,
+  onEditPlayLine,
+  onLineSaved,
 }: Props) {
   // Explanation panel state for each line (loading, error, or open).
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
@@ -85,6 +98,7 @@ export default function InteractiveLyrics({
   const [wordTranslations, setWordTranslations] = useState<Map<string, string>>(() => new Map());
   const [wordLookup, setWordLookup] = useState<WordLookupState | null>(null);
   const [showAllLines, setShowAllLines] = useState(false);
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
   const streamExplanation = useStreamingExplanation();
 
   // The target language controls AI explanations and their client cache.
@@ -104,7 +118,8 @@ export default function InteractiveLyrics({
     const lastStartedIndex = lines.findLastIndex((line) => line.start <= currentTime);
     return lastStartedIndex >= 0 ? lastStartedIndex : 0;
   }, [activeIndex, currentTime, lines]);
-  const visibleStart = Math.max(0, Math.min(currentLineIndex - 1, lines.length - 3));
+  const visibleAnchor = editingLineIndex ?? currentLineIndex;
+  const visibleStart = Math.max(0, Math.min(visibleAnchor - 1, lines.length - 3));
   const visibleLines = showAllLines ? lines : lines.slice(visibleStart, visibleStart + 3);
   const lineListStart = showAllLines ? 0 : visibleStart;
 
@@ -262,11 +277,35 @@ export default function InteractiveLyrics({
           const progress = isCurrent && line.duration > 0
             ? Math.round((elapsed / line.duration) * 100)
             : 0;
+          const editContext = getLineEditContext?.(index) ?? (songId ? {
+            songId,
+            lineIndex: index,
+            line,
+            previousLineIndex: index > 0 ? index - 1 : undefined,
+            previousLine: lines[index - 1],
+            nextLineIndex: index + 1 < lines.length ? index + 1 : undefined,
+            nextLine: lines[index + 1],
+            canEdit,
+          } : undefined);
 
           return (
             <div key={id} className="rounded px-1 py-1">
               <div className="flex items-center justify-between gap-2 px-2 py-1">
                 <div className="flex shrink-0 items-center gap-1">
+                  {(editingLineIndex === index || (editingLineIndex === null && isActive)) && (
+                    <QuickEditLine
+                      context={editContext}
+                      onPause={onPause ?? onExplainStart ?? (() => undefined)}
+                      onPlayLine={(seconds, lineIndex, duration) => {
+                        if (editContext && onEditPlayLine) onEditPlayLine(seconds, lineIndex, duration);
+                        else onSeek(seconds);
+                      }}
+                      onOpenChange={(isOpen) => setEditingLineIndex((current) =>
+                        isOpen ? index : current === index ? null : current,
+                      )}
+                      onSaved={onLineSaved}
+                    />
+                  )}
                   <Button
                     type="button"
                     variant="ghost"

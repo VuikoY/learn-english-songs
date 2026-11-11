@@ -4,7 +4,12 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import YouTube, { type YouTubeEvent, type YouTubeProps, type YouTubePlayer as YTPlayer } from "react-youtube";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
 
-export type SnippetPlayerHandle = { replay: () => void; pause: () => void; restart: () => void };
+export type SnippetPlayerHandle = {
+  replay: () => void;
+  pause: () => void;
+  restart: () => void;
+  playRange: (startTime: number, endTime: number) => void;
+};
 
 type Props = {
   itemId: string;
@@ -34,6 +39,8 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
   const onEndedRef = useRef(onEnded);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   const onErrorRef = useRef(onError);
+  const previewEndTimeRef = useRef<number | null>(null);
+  const previewingLineRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   onEndedRef.current = onEnded;
   onTimeUpdateRef.current = onTimeUpdate;
@@ -41,16 +48,24 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
 
   const finishSnippet = useCallback(() => {
     if (endedRef.current) return;
+    const previewingLine = previewingLineRef.current;
+    const endTime = previewEndTimeRef.current ?? bufferedEndTime;
     endedRef.current = true;
     playerRef.current?.pauseVideo();
-    playerRef.current?.seekTo(bufferedEndTime, true);
+    playerRef.current?.seekTo(endTime, true);
     setIsPlaying(false);
-    onTimeUpdateRef.current(bufferedEndTime);
-    onEndedRef.current();
+    previewEndTimeRef.current = null;
+    previewingLineRef.current = false;
+    if (!previewingLine) {
+      onTimeUpdateRef.current(bufferedEndTime);
+      onEndedRef.current();
+    }
   }, [bufferedEndTime]);
 
   const loadSnippet = useCallback((player: YTPlayer) => {
     endedRef.current = false;
+    previewEndTimeRef.current = null;
+    previewingLineRef.current = false;
     loadedItemIdRef.current = itemId;
     onTimeUpdateRef.current(bufferedStartTime);
     setIsPlaying(false);
@@ -64,6 +79,8 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
       const player = playerRef.current;
       if (!player) return;
       endedRef.current = false;
+      previewEndTimeRef.current = null;
+      previewingLineRef.current = false;
       player.seekTo(bufferedStartTime, true);
       player.playVideo();
     },
@@ -72,9 +89,20 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
       const player = playerRef.current;
       if (!player) return;
       endedRef.current = false;
+      previewEndTimeRef.current = null;
+      previewingLineRef.current = false;
       player.seekTo(bufferedStartTime, true);
       player.pauseVideo();
       onTimeUpdateRef.current(bufferedStartTime);
+    },
+    playRange: (startTime, endTime) => {
+      const player = playerRef.current;
+      if (!player || !Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) return;
+      endedRef.current = false;
+      previewingLineRef.current = true;
+      previewEndTimeRef.current = endTime + AUDIO_END_BUFFER_SECONDS;
+      player.seekTo(Math.max(0, startTime - AUDIO_START_BUFFER_SECONDS), true);
+      player.playVideo();
     },
   }), [bufferedStartTime]);
 
@@ -93,8 +121,8 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
       polling = true;
       try {
         const currentTime = player.getCurrentTime();
-        onTimeUpdateRef.current(currentTime);
-        if (currentTime >= bufferedEndTime) finishSnippet();
+        if (!previewingLineRef.current) onTimeUpdateRef.current(currentTime);
+        if (currentTime >= (previewEndTimeRef.current ?? bufferedEndTime)) finishSnippet();
       } catch {
         onErrorRef.current();
       } finally {

@@ -8,6 +8,7 @@ import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/co
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
+import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
 import { buildRound, countHideableWords, firstLetterOf, normalizeLetter } from "@/lib/game/buildRound";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
@@ -15,11 +16,15 @@ import type { Explanation } from "@/lib/types";
 import type { Round } from "@/types/game";
 
 type Phrase = {
+  songId: string;
+  canEdit: boolean;
   youtubeId: string;
   text: string;
   lineIndex: number;
   start: number;
   duration: number;
+  previousLine?: { text: string; start: number; duration: number };
+  nextLine?: { text: string; start: number; duration: number };
 };
 
 type Records = { dailyBest: number; allTimeBest: number; date: string };
@@ -72,6 +77,7 @@ export default function PhraseMixGame() {
   const [lineTranslationStatus, setLineTranslationStatus] = useState<"idle" | "loading" | "error">("idle");
   const [lineTranslationError, setLineTranslationError] = useState("");
   const [translationExpanded, setTranslationExpanded] = useState(false);
+  const [quickEditOpen, setQuickEditOpen] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const playerRef = useRef<PlayerHandle>(null);
   const pausedAtBoundaryRef = useRef(false);
@@ -233,14 +239,14 @@ export default function PhraseMixGame() {
 
   const handleTimeUpdate = useCallback((seconds: number) => {
     if (
-      phase === "playing" && phrase && !loadingPhrase &&
+      phase === "playing" && phrase && !loadingPhrase && !quickEditOpen &&
       seconds >= phrase.start + phrase.duration + AUDIO_END_BUFFER_SECONDS &&
       !pausedAtBoundaryRef.current
     ) {
       pausedAtBoundaryRef.current = true;
       playerRef.current?.pause();
     }
-  }, [loadingPhrase, phase, phrase]);
+  }, [loadingPhrase, phase, phrase, quickEditOpen]);
 
   async function toggleExplanation() {
     if (!phrase) return;
@@ -336,7 +342,7 @@ export default function PhraseMixGame() {
   });
 
   useEffect(() => {
-    if (phase !== "playing" || loadingPhrase || !round) return;
+    if (phase !== "playing" || loadingPhrase || !round || quickEditOpen) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -353,7 +359,7 @@ export default function PhraseMixGame() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loadingPhrase, nextBlank, phase, phrase, playerReady, replayPhrase, round]);
+  }, [loadingPhrase, nextBlank, phase, phrase, playerReady, quickEditOpen, replayPhrase, round]);
 
   useEffect(() => {
     if (recordFlash) {
@@ -383,6 +389,16 @@ export default function PhraseMixGame() {
       {loadingPhrase && <span className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-neutral-300" role="status"><Loader2 className="size-4 animate-spin" aria-hidden="true" />{t("game.phraseMix.next")}</span>}
     </div>
   );
+  const lineEditContext: QuickEditContext | undefined = phrase ? {
+    songId: phrase.songId,
+    canEdit: phrase.canEdit,
+    lineIndex: phrase.lineIndex,
+    line: { text: phrase.text, start: phrase.start, duration: phrase.duration },
+    previousLineIndex: phrase.previousLine ? phrase.lineIndex - 1 : undefined,
+    previousLine: phrase.previousLine,
+    nextLineIndex: phrase.nextLine ? phrase.lineIndex + 1 : undefined,
+    nextLine: phrase.nextLine,
+  } : undefined;
 
   if (phase === "setup") {
     return (
@@ -429,6 +445,45 @@ export default function PhraseMixGame() {
           <ArrowUpDown className="size-4" />{t("game.replay")}
         </Button>
         <div className="flex items-center justify-center gap-1">
+          <QuickEditLine
+            context={lineEditContext}
+            onPause={() => playerRef.current?.pause()}
+            onOpenChange={setQuickEditOpen}
+            onPlayLine={(seconds, _lineIndex, duration) => {
+              if (!phrase) return;
+              playerRef.current?.playRange(seconds, seconds + duration);
+            }}
+            onSaved={(save: QuickEditLineSave) => {
+              if (!phrase) return;
+              const currentLineIndex = save.insert && save.insert.afterIndex < phrase.lineIndex
+                ? phrase.lineIndex + 1
+                : save.deleteLineIndex !== undefined && save.deleteLineIndex < phrase.lineIndex
+                  ? phrase.lineIndex - 1
+                  : phrase.lineIndex;
+              const updatedLine = save.lines?.[currentLineIndex]
+                ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex)?.line;
+              const previousLine = save.lines?.[currentLineIndex - 1]
+                ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex - 1)?.line;
+              const nextLine = save.lines?.[currentLineIndex + 1]
+                ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex + 1)?.line;
+              if (!updatedLine) return;
+              setPhrase({ ...phrase, lineIndex: currentLineIndex, text: updatedLine.text, start: updatedLine.start, duration: updatedLine.duration });
+              setRound(buildRound(0, updatedLine.text, { mode: "first-letter", difficulty: "hard" }, []));
+              if (updatedLine.text !== phrase.text) {
+                setLineTranslation(null);
+                setTranslationExpanded(false);
+                setExplanationStatus("closed");
+                setRemoteExplanation(null);
+              }
+              if (previousLine || nextLine) {
+                setPhrase((current) => current ? {
+                  ...current,
+                  ...(previousLine ? { previousLine } : {}),
+                  ...(nextLine ? { nextLine } : {}),
+                } : current);
+              }
+            }}
+          />
           <Button className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")} aria-label={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")} aria-expanded={explanationStatus === "open"} disabled={!phrase || explanationStatus === "loading"} onClick={() => void toggleExplanation()}>
             {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : explanationStatus === "open" ? <ChevronUp className="size-4" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
           </Button>

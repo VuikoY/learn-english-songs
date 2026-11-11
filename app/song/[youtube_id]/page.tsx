@@ -15,6 +15,7 @@ import { DIFFICULTIES, type GameSettings } from "@/types/game";
 import { useAuthState } from "@/context/AuthContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
+import type { QuickEditLineSave } from "@/components/QuickEditLine";
 
 type View = "read" | "play";
 
@@ -41,6 +42,7 @@ function SongPageContent() {
   const [gameProgress, setGameProgress] = useState({ current: 0, total: 0 });
   const [gameStartRequest, setGameStartRequest] = useState(0);
   const [songDbId, setSongDbId] = useState<string | null>(null);
+  const [songOwnerId, setSongOwnerId] = useState<string | null>(null);
   const [view, setView] = usePersistentState<View>(
     "lingo-clips:active-view",
     "read",
@@ -106,9 +108,13 @@ function SongPageContent() {
     player.seekTo(Math.max(0, seconds - AUDIO_START_BUFFER_SECONDS));
     player.play();
   }, []);
+  const playEditedLine = useCallback((seconds: number, _lineIndex: number, duration: number) => {
+    playerRef.current?.playRange(seconds, seconds + duration);
+  }, []);
 
   function showVideo(newLines: LyricLine[]) {
     setSongDbId(null);
+    setSongOwnerId(null);
     setLines(newLines);
     setCurrentTime(0);
     setHasPlaybackStarted(false);
@@ -121,7 +127,7 @@ function SongPageContent() {
       if (db) {
         const { data: song, error: songError } = await db
           .from("songs")
-          .select("id,title,transcripts(lines_json)")
+          .select("id,title,created_by,transcripts(lines_json)")
           .eq("youtube_id", id)
           .maybeSingle();
         if (songError) throw new Error(t("home.loadError"));
@@ -134,6 +140,7 @@ function SongPageContent() {
           }
           showVideo(transcript.lines_json as unknown as LyricLine[]);
           setSongDbId(song.id);
+          setSongOwnerId(song.created_by);
           return;
         }
       }
@@ -173,6 +180,7 @@ function SongPageContent() {
     void handleLoad(id, lyricsTitle, lyricsArtist);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, sourceLanguage, routeVideoId, userId, lyricsTitle, lyricsArtist]);
+  const canEditSong = Boolean(songDbId && userId && songOwnerId === userId);
 
   return (
     <main className="mx-auto w-full max-w-6xl py-8">
@@ -197,14 +205,32 @@ function SongPageContent() {
           <InteractiveLyrics
             lines={lines}
             currentTime={currentTime}
-          youtubeId={videoId}
-
+            youtubeId={videoId}
+            songId={songDbId}
+            canEdit={canEditSong}
             onSeek={playFrom}
             onExplainStart={pausePlayer}
+            onPause={pausePlayer}
+            onEditPlayLine={playEditedLine}
+            onLineSaved={(save) => {
+              if (save.lines) {
+                setLines(save.lines);
+                return;
+              }
+              const byIndex = new Map(save.updates.map(({ lineIndex, line }) => [lineIndex, line]));
+              setLines((current) => current.map((line, index) => byIndex.get(index) ?? line));
+            }}
           />
         </div>
         <div className={view === "play" ? "" : "hidden"}>
-          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onPauseAtBoundary={pausePlayer} onPause={pausePlayer} />
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} canEdit={canEditSong} onLineSaved={(save: QuickEditLineSave) => {
+            if (save.lines) {
+              setLines(save.lines);
+              return;
+            }
+            const byIndex = new Map(save.updates.map(({ lineIndex, line }) => [lineIndex, line]));
+            setLines((current) => current.map((line, index) => byIndex.get(index) ?? line));
+          }} settings={gameSettings} onDifficultyChange={(difficulty) => setGameSettings((previous) => ({ ...previous, difficulty }))} onProgressChange={updateGameProgress} onPlayLine={playGameLine} onEditPlayLine={playEditedLine} onPauseAtBoundary={pausePlayer} onPause={pausePlayer} />
         </div>
       </div>
     </main>

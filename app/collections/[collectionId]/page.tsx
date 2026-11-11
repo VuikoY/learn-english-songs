@@ -8,6 +8,7 @@ import CollectionLearningSession, { type CollectionLearningItem } from "@/compon
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { LyricLine } from "@/lib/types";
 
 type Collection = { id: string; title: string; isPublic: boolean; isOwner: boolean };
 
@@ -61,20 +62,33 @@ function WordCollectionContent() {
 
       const songIds = [...new Set((itemRows ?? []).map((item) => item.song_id))];
       const { data: songRows, error: songError } = songIds.length > 0
-        ? await db.from("songs").select("id,youtube_id,title").in("id", songIds)
+        ? await db.from("songs").select("id,youtube_id,title,created_by,transcripts(lines_json)").in("id", songIds)
         : { data: [], error: null };
       if (songError) throw songError;
       const songsById = new Map((songRows ?? []).map((song) => [song.id, song]));
       const loadedItems = (itemRows ?? []).flatMap((item): CollectionLearningItem[] => {
         const song = songsById.get(item.song_id);
         if (!song) return [];
+        const transcript = Array.isArray(song.transcripts) ? song.transcripts[0] : song.transcripts;
+        const sourceLines = Array.isArray(transcript?.lines_json)
+          ? transcript.lines_json as unknown as LyricLine[]
+          : [];
+        const startTime = Number(item.start_time);
+        const endTime = Number(item.end_time);
+        const sourceLineIndex = sourceLines.findIndex((line) =>
+          line.text.trim() === item.line_text.trim() && Math.abs(line.start - startTime) < 0.25,
+        );
         return [{
           id: item.id,
           youtubeId: song.youtube_id,
           songTitle: song.title,
           lineText: item.line_text,
-          startTime: Number(item.start_time),
-          endTime: Number(item.end_time),
+          startTime,
+          endTime,
+          songId: song.id,
+          authorId: song.created_by,
+          sourceLineIndex: sourceLineIndex < 0 ? null : sourceLineIndex,
+          sourceLines,
         }];
       });
       setCollection(selected);

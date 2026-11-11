@@ -28,6 +28,7 @@ import {
 } from "@/lib/game/buildRound";
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
 import type { Explanation, LyricLine } from "@/lib/types";
+import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import {
@@ -47,6 +48,10 @@ type Props = {
   youtubeId?: string;
   getLineYoutubeId?: (lineIndex: number) => string | undefined;
   songId?: string | null;
+  canEdit?: boolean;
+  getLineEditContext?: (lineIndex: number) => QuickEditContext | undefined;
+  onEditPlayLine?: (seconds: number, lineIndex: number, duration: number) => void;
+  onLineSaved?: (save: QuickEditLineSave) => void;
   /** Seeks to a song line and starts playback. */
   onPlayLine?: (startSeconds: number, lineIndex: number) => void;
   onStart?: (startSeconds: number, lineIndex: number) => void;
@@ -73,7 +78,7 @@ function maskWordPreservingApostrophes(word: string): string {
   ).join("");
 }
 
-export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const streamExplanation = useStreamingExplanation();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
@@ -84,6 +89,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   const [lineTranslationStates, setLineTranslationStates] = useState<Record<string, "loading" | "error">>({});
   const [lineTranslationErrors, setLineTranslationErrors] = useState<Record<string, string>>({});
   const [expandedTranslationKey, setExpandedTranslationKey] = useState<string | null>(null);
+  const [quickEditOpen, setQuickEditOpen] = useState(false);
 
   // ---------- State ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
@@ -138,6 +144,18 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     ? currentLine.translations?.[targetLanguage] ?? lineTranslations[currentTranslationKey]
     : undefined;
   const currentLineYoutubeId = round ? getLineYoutubeId?.(round.lineIndex) ?? youtubeId : youtubeId;
+  const lineEditContext = round && currentLine
+    ? getLineEditContext?.(round.lineIndex) ?? (songId ? {
+      songId,
+      lineIndex: round.lineIndex,
+      line: currentLine,
+      previousLineIndex: round.lineIndex > 0 ? round.lineIndex - 1 : undefined,
+      previousLine: lines[round.lineIndex - 1],
+      nextLineIndex: round.lineIndex + 1 < lines.length ? round.lineIndex + 1 : undefined,
+      nextLine: lines[round.lineIndex + 1],
+      canEdit,
+    } : undefined)
+    : undefined;
 
   const startRound = useCallback((nextPosition: number, activeSettings: GameSettings = settings) => {
     const entry = playable[nextPosition];
@@ -277,7 +295,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   }
 
   useEffect(() => {
-    if (!active || phase !== "playing" || !currentLine) {
+    if (!active || phase !== "playing" || !currentLine || quickEditOpen) {
       return;
     }
 
@@ -316,7 +334,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       onPause?.();
       queueMicrotask(() => setPhase("finished"));
     }
-  }, [active, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, round, startRound]);
+  }, [active, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, quickEditOpen, round, startRound]);
 
   useEffect(() => {
     if (phase !== "finished" || !songId || progressSavedRef.current) return;
@@ -492,7 +510,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     letterHandlerRef.current = handleLetter;
   });
 
-  const isGamePlaying = phase === "playing" && active;
+  const isGamePlaying = phase === "playing" && active && !quickEditOpen;
   useEffect(() => {
     if (!isGamePlaying) return;
 
@@ -705,6 +723,16 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       {/* Song line. The ref is used for the shake animation. */}
       <div ref={lineRef} className="rounded-xl border bg-card p-5">
         <div className="flex items-start gap-3">
+        <QuickEditLine
+          context={lineEditContext}
+          onPause={() => onPause?.()}
+          onPlayLine={(seconds, lineIndex, duration) => {
+            if (onEditPlayLine) onEditPlayLine(seconds, lineIndex, duration);
+            else onPlayLine?.(seconds, lineIndex);
+          }}
+          onOpenChange={setQuickEditOpen}
+          onSaved={onLineSaved}
+        />
         <p className="min-w-0 flex-1 flex flex-wrap items-baseline gap-x-2 gap-y-3 text-xl leading-snug">
           {round.tokens.map((token) => {
             // 1) This word is not hidden; show it as-is.

@@ -11,6 +11,8 @@ import { usePersistentState } from "@/lib/storage/usePersistentState";
 import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { DIFFICULTIES, type Difficulty, type GameSettings } from "@/types/game";
 import type { LyricLine } from "@/lib/types";
+import type { QuickEditContext, QuickEditLineSave } from "@/components/QuickEditLine";
+import { useAuthState } from "@/context/AuthContext";
 
 export type CollectionLearningItem = {
   id: string;
@@ -19,6 +21,10 @@ export type CollectionLearningItem = {
   lineText: string;
   startTime: number;
   endTime: number;
+  songId: string;
+  authorId: string | null;
+  sourceLineIndex: number | null;
+  sourceLines: LyricLine[];
 };
 
 type Props = { items: CollectionLearningItem[] };
@@ -44,6 +50,8 @@ function createTimeline(items: CollectionLearningItem[]): TimelineEntry[] {
 
 export default function CollectionLearningSession({ items }: Props) {
   const { t } = useLanguage();
+  const { userId } = useAuthState();
+  const [sessionItems, setSessionItems] = useState(items);
   const [view, setView] = usePersistentState<View>(
     "lingo-clips:active-view",
     "read",
@@ -67,7 +75,7 @@ export default function CollectionLearningSession({ items }: Props) {
   const [gameStartRequest, setGameStartRequest] = useState(0);
   const playerRef = useRef<SnippetPlayerHandle>(null);
 
-  const timeline = useMemo(() => createTimeline(items), [items]);
+  const timeline = useMemo(() => createTimeline(sessionItems), [sessionItems]);
   const lines = useMemo(() => timeline.map(({ line }) => line), [timeline]);
   const currentEntry = timeline[position] ?? timeline[0] ?? null;
   const playableLines = useMemo(
@@ -85,6 +93,60 @@ export default function CollectionLearningSession({ items }: Props) {
   }, [currentTime, hasPlaybackStarted, playableLines]);
 
   const pausePlayer = useCallback(() => playerRef.current?.pause(), []);
+  const playEditedLine = useCallback((seconds: number, _sourceLineIndex: number, duration: number) => {
+    playerRef.current?.playRange(seconds, seconds + duration);
+  }, []);
+  const getLineEditContext = useCallback((lineIndex: number): QuickEditContext | undefined => {
+    const item = timeline[lineIndex]?.item;
+    if (!item || item.sourceLineIndex === null) return undefined;
+    const sourceLine = item.sourceLines[item.sourceLineIndex];
+    if (!sourceLine) return undefined;
+    return {
+      songId: item.songId,
+      lineIndex: item.sourceLineIndex,
+      line: sourceLine,
+      previousLineIndex: item.sourceLineIndex > 0 ? item.sourceLineIndex - 1 : undefined,
+      previousLine: item.sourceLines[item.sourceLineIndex - 1],
+      nextLineIndex: item.sourceLineIndex + 1 < item.sourceLines.length ? item.sourceLineIndex + 1 : undefined,
+      nextLine: item.sourceLines[item.sourceLineIndex + 1],
+      canEdit: Boolean(userId && userId === item.authorId),
+    };
+  }, [timeline, userId]);
+
+  const saveCollectionLines = useCallback((save: QuickEditLineSave) => {
+    const { songId, updates } = save;
+    const byIndex = new Map(updates.map(({ lineIndex, line }) => [lineIndex, line]));
+    setSessionItems((current) => current.map((entry) => {
+      if (entry.songId !== songId) return entry;
+      let sourceLines = save.lines ?? entry.sourceLines.map((line, index) => byIndex.get(index) ?? line);
+      let sourceLineIndex = entry.sourceLineIndex;
+      if (save.deleteLineIndex !== undefined && sourceLineIndex !== null) {
+        if (!save.lines) sourceLines = sourceLines.filter((_, index) => index !== save.deleteLineIndex);
+        if (sourceLineIndex === save.deleteLineIndex) sourceLineIndex = null;
+        else if (sourceLineIndex > save.deleteLineIndex) sourceLineIndex -= 1;
+      }
+      if (save.insert && sourceLineIndex !== null) {
+        if (!save.lines) {
+          sourceLines = [
+            ...sourceLines.slice(0, save.insert.afterIndex + 1),
+            save.insert.line,
+            ...sourceLines.slice(save.insert.afterIndex + 1),
+          ];
+        }
+        if (save.insert.afterIndex < sourceLineIndex) sourceLineIndex += 1;
+      }
+      if (sourceLineIndex === null) return { ...entry, sourceLines, sourceLineIndex };
+      const updatedLine = sourceLines[sourceLineIndex];
+      return updatedLine ? {
+        ...entry,
+        lineText: updatedLine.text,
+        startTime: updatedLine.start,
+        endTime: updatedLine.start + updatedLine.duration,
+        sourceLines,
+        sourceLineIndex,
+      } : { ...entry, sourceLines };
+    }));
+  }, []);
 
   const playLine = useCallback((startSeconds: number, lineIndex?: number) => {
     const nextPosition = lineIndex ?? lines.findIndex((line) => line.start === startSeconds);
@@ -189,6 +251,10 @@ export default function CollectionLearningSession({ items }: Props) {
           lines={lines}
           currentTime={currentTime}
           getLineYoutubeId={(lineIndex) => timeline[lineIndex]?.item.youtubeId}
+          getLineEditContext={getLineEditContext}
+          onPause={pausePlayer}
+          onLineSaved={saveCollectionLines}
+          onEditPlayLine={playEditedLine}
           onSeek={(seconds) => {
             const lineIndex = lines.findIndex((line) => line.start === seconds);
             playLine(seconds, lineIndex);
@@ -205,6 +271,9 @@ export default function CollectionLearningSession({ items }: Props) {
           lines={lines}
           currentTime={currentTime}
           getLineYoutubeId={(lineIndex) => timeline[lineIndex]?.item.youtubeId}
+          getLineEditContext={getLineEditContext}
+          onLineSaved={saveCollectionLines}
+          onEditPlayLine={playEditedLine}
           settings={gameSettings}
           onDifficultyChange={(difficulty: Difficulty) =>
             setGameSettings((previous) => ({ ...previous, difficulty }))

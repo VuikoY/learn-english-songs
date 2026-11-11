@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import YouTube, { type YouTubeEvent, type YouTubePlayer as YTPlayer } from "react-youtube";
+import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
 
 /**
  * Methods exposed to the parent component through a ref:
@@ -18,6 +19,7 @@ export type PlayerHandle = {
   play: () => void;
   pause: () => void;
   seekTo: (seconds: number) => void;
+  playRange: (startSeconds: number, endSeconds: number) => void;
   getVolume: () => number;
   setVolume: (volume: number) => void;
 };
@@ -43,17 +45,32 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
 ) {
   // Store the YouTube player instance when it becomes ready.
   const playerRef = useRef<YTPlayer | null>(null);
+  const rangeEndRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Expose play, pause, seekTo, and volume controls to the parent component.
   useImperativeHandle(
     ref,
     () => ({
-      play: () => void playerRef.current?.playVideo(),
-      pause: () => void playerRef.current?.pauseVideo(),
+      play: () => {
+        rangeEndRef.current = null;
+        void playerRef.current?.playVideo();
+      },
+      pause: () => {
+        rangeEndRef.current = null;
+        void playerRef.current?.pauseVideo();
+      },
       seekTo: (seconds: number) => {
+        rangeEndRef.current = null;
         void playerRef.current?.seekTo(seconds, true);
         onTimeUpdate?.(seconds); // Update the UI immediately rather than waiting for the next poll.
+      },
+      playRange: (startSeconds: number, endSeconds: number) => {
+        const player = playerRef.current;
+        if (!player || !Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) return;
+        rangeEndRef.current = endSeconds + AUDIO_END_BUFFER_SECONDS;
+        void player.seekTo(Math.max(0, startSeconds - AUDIO_START_BUFFER_SECONDS), true);
+        void player.playVideo();
       },
       getVolume: () => playerRef.current?.getVolume() ?? 100,
       setVolume: (volume: number) => playerRef.current?.setVolume(volume),
@@ -69,6 +86,14 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
       const player = playerRef.current;
       if (!player) return;
       const time = await player.getCurrentTime();
+      const rangeEnd = rangeEndRef.current;
+      if (rangeEnd !== null && time >= rangeEnd) {
+        rangeEndRef.current = null;
+        void player.pauseVideo();
+        void player.seekTo(rangeEnd, true);
+        onTimeUpdate?.(rangeEnd);
+        return;
+      }
       onTimeUpdate?.(time);
     }, POLL_INTERVAL_MS);
 
