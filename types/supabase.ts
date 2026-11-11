@@ -119,6 +119,11 @@ isOneToOne: false
                   Insert: { "all_time_best"?: number,"daily_best"?: number,"daily_date"?: string,"updated_at"?: string,"user_id": string }
                   Update: { "all_time_best"?: number,"daily_best"?: number,"daily_date"?: string,"updated_at"?: string,"user_id"?: string }
                   Relationships: []
+                },"user_learning_activity": {
+                  Row: { user_id: string; session_id: string; source: string; words_covered: number; occurred_at: string | null }
+                  Insert: { user_id: string; session_id: string; source: string; words_covered: number; occurred_at?: string | null }
+                  Update: { user_id?: string; session_id?: string; source?: string; words_covered?: number; occurred_at?: string | null }
+                  Relationships: []
                 },"user_settings": {
                   Row: {
                     "settings_json": NonNullable<Json>,"source_language": string,"target_language": string,"ui_language": string,"updated_at": string,"user_id": string
@@ -176,6 +181,7 @@ isOneToOne: false
                 "completed_media": number
                 "hard_completed": number
                 "pseudonym": string
+                "words_covered": number
               }[]
             }
             "get_random_phrase_mix_line": {
@@ -185,6 +191,14 @@ isOneToOne: false
             "save_phrase_mix_record": {
               Args: { p_streak: number }
               Returns: { daily_best: number; all_time_best: number; daily_date: string }[]
+            }
+            "save_learning_activity": {
+              Args: { p_session_id: string; p_source: string; p_words_covered: number }
+              Returns: undefined
+            }
+            "get_learning_word_totals": {
+              Args: Record<PropertyKey, never>
+              Returns: { words_covered: number; words_today: number }[]
             }
           }
           Enums: {

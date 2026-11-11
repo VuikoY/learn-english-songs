@@ -31,6 +31,7 @@ import type { Explanation, LyricLine } from "@/lib/types";
 import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
+import { queueLearningActivitySave, saveLearningActivity, type LearningActivitySource } from "@/lib/learningActivity";
 import {
   DIFFICULTIES,
   HIDE_RATIO,
@@ -67,6 +68,7 @@ type Props = {
   hasPlaybackStarted: boolean;
   onQuit: () => void;
   active: boolean;
+  learningActivitySource?: LearningActivitySource;
 };
 
 // Minimum number of words required for a line to be playable.
@@ -78,8 +80,9 @@ function maskWordPreservingApostrophes(word: string): string {
   ).join("");
 }
 
-export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active, learningActivitySource }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const activitySource = learningActivitySource ?? (songId ? "media" : "collection");
   const streamExplanation = useStreamingExplanation();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
   const [explanationError, setExplanationError] = useState("");
@@ -100,6 +103,9 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   const [progressStatus, setProgressStatus] = useState<"idle" | "saving" | "saved" | "error" | "sign-in">("idle");
   const pauseRequestedRoundRef = useRef<Round | null>(null);
   const progressSavedRef = useRef(false);
+  const activitySavedRef = useRef(false);
+  const activitySessionIdRef = useRef<string | null>(null);
+  const [activitySaveError, setActivitySaveError] = useState<"error" | "sign-in" | null>(null);
   const [shakeKey, setShakeKey] = useState(0); // Increment to trigger the error shake animation.
 
   const lineRef = useRef<HTMLDivElement>(null);
@@ -123,6 +129,29 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   const progressPercent = totalHiddenWords > 0 ? (completedWords / totalHiddenWords) * 100 : 0;
   const answers = game.correct + game.mistakes;
   const accuracy = answers === 0 ? 0 : Math.round((game.correct / answers) * 100);
+  const latestActivityRef = useRef({ sessionId: null as string | null, source: activitySource, wordsCovered: completedWords });
+
+  useEffect(() => {
+    latestActivityRef.current = {
+      sessionId: activitySessionIdRef.current,
+      source: activitySource,
+      wordsCovered: completedWords,
+    };
+  }, [activitySource, completedWords, phase]);
+
+  useEffect(() => {
+    const saveBeforeExit = () => {
+      const activity = latestActivityRef.current;
+      if (!activity.sessionId || activity.wordsCovered < 1 || activitySavedRef.current) return;
+      queueLearningActivitySave({
+        sessionId: activity.sessionId,
+        source: activity.source,
+        wordsCovered: activity.wordsCovered,
+      });
+    };
+    window.addEventListener("pagehide", saveBeforeExit);
+    return () => window.removeEventListener("pagehide", saveBeforeExit);
+  }, []);
 
   useEffect(() => {
     const current = phase === "setup" ? 0 : Math.min(position + 1, Math.max(playable.length, 1));
@@ -337,35 +366,51 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   }, [active, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, quickEditOpen, round, startRound]);
 
   useEffect(() => {
-    if (phase !== "finished" || !songId || progressSavedRef.current) return;
+    if (phase !== "finished" || progressSavedRef.current) return;
     progressSavedRef.current = true;
     void (async () => {
       await Promise.resolve();
       setProgressStatus("saving");
-      try {
-        const response = await fetch("/api/media-progress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mediaId: songId,
-            difficulty: `${settings.difficulty[0].toUpperCase()}${settings.difficulty.slice(1)}`,
-            accuracy,
-            wordsCompleted: completedWords,
-            totalWords: totalHiddenWords,
-            mistakesCount: game.mistakes,
-          }),
-        });
-        const result = await response.json().catch(() => null) as { error?: unknown } | null;
-        if (!response.ok) {
-          setProgressStatus(result?.error === "AUTH_REQUIRED" ? "sign-in" : "error");
-          return;
+      let saveError: "error" | "sign-in" | null = null;
+      if (songId) {
+        try {
+          const response = await fetch("/api/media-progress", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mediaId: songId,
+              difficulty: `${settings.difficulty[0].toUpperCase()}${settings.difficulty.slice(1)}`,
+              accuracy,
+              wordsCompleted: completedWords,
+              totalWords: totalHiddenWords,
+              mistakesCount: game.mistakes,
+            }),
+          });
+          const result = await response.json().catch(() => null) as { error?: unknown } | null;
+          if (!response.ok) {
+            saveError = result?.error === "AUTH_REQUIRED" ? "sign-in" : "error";
+          }
+        } catch {
+          saveError = "error";
         }
-        setProgressStatus("saved");
-      } catch {
-        setProgressStatus("error");
       }
+
+      const sessionId = activitySessionIdRef.current;
+      if (sessionId && completedWords > 0 && !activitySavedRef.current) {
+        try {
+          await saveLearningActivity({ sessionId, source: activitySource, wordsCovered: completedWords });
+          activitySavedRef.current = true;
+          setActivitySaveError(null);
+        } catch (error) {
+          console.error("[game] Could not save learning activity.", error);
+          saveError = error instanceof Error && error.message === "AUTH_REQUIRED" ? "sign-in" : "error";
+          setActivitySaveError(saveError);
+        }
+      }
+
+      setProgressStatus(saveError ?? (songId || completedWords > 0 ? "saved" : "idle"));
     })();
-  }, [accuracy, completedWords, game.mistakes, phase, settings.difficulty, songId, totalHiddenWords]);
+  }, [accuracy, activitySource, completedWords, game.mistakes, phase, settings.difficulty, songId, totalHiddenWords]);
 
   // ---------- Round controls ----------
 
@@ -373,6 +418,9 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     if (playable.length === 0) return;
     dispatch({ type: "reset" });
     progressSavedRef.current = false;
+    activitySavedRef.current = false;
+    activitySessionIdRef.current = crypto.randomUUID();
+    setActivitySaveError(null);
     setProgressStatus("idle");
     startRound(0);
     setPhase("playing");
@@ -406,6 +454,9 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     queueMicrotask(() => {
       dispatch({ type: "reset" });
       progressSavedRef.current = false;
+      activitySavedRef.current = false;
+      activitySessionIdRef.current = crypto.randomUUID();
+      setActivitySaveError(null);
       setProgressStatus("idle");
       startRound(startPosition);
       setPhase("playing");
@@ -426,7 +477,18 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     onPlayLine(currentLine.start, round?.lineIndex ?? position);
   }, [currentLine, onPlayLine, position, round?.lineIndex]);
 
-  function quitToSetup() {
+  async function quitToSetup() {
+    const sessionId = activitySessionIdRef.current;
+    if (sessionId && completedWords > 0 && !activitySavedRef.current) {
+      try {
+        await saveLearningActivity({ sessionId, source: activitySource, wordsCovered: completedWords });
+        activitySavedRef.current = true;
+        setActivitySaveError(null);
+      } catch (error) {
+        console.error("[game] Could not save learning activity on quit.", error);
+        setActivitySaveError(error instanceof Error && error.message === "AUTH_REQUIRED" ? "sign-in" : "error");
+      }
+    }
     setRound(null);
     setPosition(0);
     setPhase("setup");
@@ -598,6 +660,11 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
         {playable.length === 0 && (
           <p role="alert" className="text-sm text-destructive">
             {t("game.noLines")}
+          </p>
+        )}
+        {activitySaveError && (
+          <p role="alert" className="text-sm text-destructive">
+            {t(activitySaveError === "sign-in" ? "game.progressSignInRequired" : "game.progressSaveError")}
           </p>
         )}
 

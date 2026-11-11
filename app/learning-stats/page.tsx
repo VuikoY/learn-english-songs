@@ -6,9 +6,10 @@ import { useAuthState } from "@/context/AuthContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/context/LanguageContext";
 import { PAGE_TEXT } from "@/lib/i18n/pages";
+import { Crown } from "lucide-react";
 
 type LearningStats = { completedMedia: number; hardCompleted: number; wordsCompleted: number; averageAccuracy: number };
-type LeaderboardEntry = { pseudonym: string; hard_completed: number; completed_media: number; average_accuracy: number };
+type LeaderboardEntry = { pseudonym: string; words_covered: number; average_accuracy: number; completed_media: number };
 
 export default function LearningStatsPage() {
   const { userId, loading: authLoading } = useAuthState();
@@ -30,15 +31,16 @@ export default function LearningStatsPage() {
     }
     if (!userId) return;
 
-    const [progress, leaderboardResult] = await Promise.all([
+    const [progress, leaderboardResult, wordTotals] = await Promise.all([
       db.from("user_media_progress")
         .select("media_id,difficulty,accuracy,words_completed,is_completed")
         .eq("user_id", userId),
       db.rpc("get_learning_leaderboard"),
+      db.rpc("get_learning_word_totals"),
     ]);
 
-    if (progress.error) {
-      console.error("[learning-stats] Could not load learning statistics.", progress.error.code);
+    if (progress.error || wordTotals.error) {
+      console.error("[learning-stats] Could not load learning statistics.", progress.error?.code ?? wordTotals.error?.code);
       setLearningStats(null);
       setLearningStatsError(true);
     } else {
@@ -47,7 +49,7 @@ export default function LearningStatsPage() {
       setLearningStats({
         completedMedia: new Set(completedRows.map((row) => row.media_id)).size,
         hardCompleted: new Set(completedRows.filter((row) => row.difficulty === "Hard").map((row) => row.media_id)).size,
-        wordsCompleted: progressRows.reduce((sum, row) => sum + row.words_completed, 0),
+        wordsCompleted: wordTotals.data?.[0]?.words_covered ?? 0,
         averageAccuracy: progressRows.length
           ? Math.round(progressRows.reduce((sum, row) => sum + row.accuracy, 0) / progressRows.length)
           : 0,
@@ -86,18 +88,26 @@ export default function LearningStatsPage() {
         {learningStatsError ? (
           <p role="alert" className="text-sm text-destructive">{t("dashboard.learningStatsError")}</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[
-              [t("dashboard.hardCompleted"), learningStats?.hardCompleted ?? "—"],
-              [t("dashboard.completedMedia"), learningStats?.completedMedia ?? "—"],
-              [t("dashboard.wordsCompleted"), learningStats?.wordsCompleted ?? "—"],
-              [t("dashboard.averageAccuracy"), learningStats ? `${learningStats.averageAccuracy}%` : "—"],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border bg-card p-4">
-                <p className="text-sm text-muted-foreground">{label}</p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-              </div>
-            ))}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border bg-card p-5">
+              <p className="text-base font-medium text-muted-foreground">{t("dashboard.wordsCompleted")}</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-primary">{learningStats?.wordsCompleted ?? "—"}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-5">
+              <p className="text-base font-medium text-muted-foreground">{t("dashboard.averageAccuracy")}</p>
+              <p className="mt-2 text-3xl font-semibold tabular-nums">{learningStats ? `${learningStats.averageAccuracy}%` : "—"}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-5">
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-2xl font-semibold tabular-nums">{learningStats?.completedMedia ?? "—"}</span>
+                <span className="text-base font-medium text-muted-foreground">{t("dashboard.completedMedia")}</span>
+              </p>
+              <p className="mt-2 flex items-center gap-1.5 text-base font-medium text-amber-500">
+                <Crown className="size-4" aria-hidden="true" />
+                <span className="tabular-nums">{learningStats?.hardCompleted ?? "—"}</span>
+                <span>{t("dashboard.onHard")}</span>
+              </p>
+            </div>
           </div>
         )}
       </section>
@@ -111,14 +121,14 @@ export default function LearningStatsPage() {
           <p className="text-sm text-muted-foreground">{t("dashboard.leaderboardEmpty")}</p>
         ) : (
           <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-[42rem] text-left text-sm">
+            <table className="w-full min-w-[44rem] text-left text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-medium">{t("dashboard.leaderboardRank")}</th>
                   <th scope="col" className="px-4 py-3 font-medium">{t("dashboard.leaderboardLearner")}</th>
-                  <th scope="col" className="px-4 py-3 font-medium">{t("dashboard.hardCompleted")}</th>
-                  <th scope="col" className="px-4 py-3 font-medium">{t("dashboard.completedMedia")}</th>
+                  <th scope="col" className="px-4 py-3 font-medium">{t("dashboard.wordsCompleted")}</th>
                   <th scope="col" className="px-4 py-3 font-medium">{t("dashboard.averageAccuracy")}</th>
+                  <th scope="col" className="px-4 py-3 font-medium">{t("dashboard.completedMedia")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -126,9 +136,9 @@ export default function LearningStatsPage() {
                   <tr key={entry.pseudonym}>
                     <td className="px-4 py-3 tabular-nums">{index + 1}</td>
                     <td className="px-4 py-3">{t("dashboard.leaderboardLearner")} {entry.pseudonym}</td>
-                    <td className="px-4 py-3 tabular-nums">{entry.hard_completed}</td>
-                    <td className="px-4 py-3 tabular-nums">{entry.completed_media}</td>
+                    <td className="px-4 py-3 tabular-nums">{entry.words_covered}</td>
                     <td className="px-4 py-3 tabular-nums">{entry.average_accuracy}%</td>
+                    <td className="px-4 py-3 tabular-nums">{entry.completed_media}</td>
                   </tr>
                 ))}
               </tbody>

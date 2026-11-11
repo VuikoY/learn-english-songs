@@ -275,6 +275,7 @@ export default function CollectionLearningSession({ items }: Props) {
           onLineSaved={saveCollectionLines}
           onEditPlayLine={playEditedLine}
           settings={gameSettings}
+          learningActivitySource="collection"
           onDifficultyChange={(difficulty: Difficulty) =>
             setGameSettings((previous) => ({ ...previous, difficulty }))
           }

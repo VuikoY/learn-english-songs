@@ -12,6 +12,7 @@ import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/
 import { buildRound, countHideableWords, firstLetterOf, normalizeLetter } from "@/lib/game/buildRound";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
+import { queueLearningActivitySave, saveLearningActivity } from "@/lib/learningActivity";
 import type { Explanation } from "@/lib/types";
 import type { Round } from "@/types/game";
 
@@ -62,11 +63,14 @@ export default function PhraseMixGame() {
   const [phrase, setPhrase] = useState<Phrase | null>(null);
   const [round, setRound] = useState<Round | null>(null);
   const [currentStreak, setCurrentStreak] = useState(0);
+  const [wordsToday, setWordsToday] = useState(0);
+  const [sessionWordsCovered, setSessionWordsCovered] = useState(0);
   const [consecutiveMistakes, setConsecutiveMistakes] = useState(0);
   const [records, setRecords] = useState<Records>({ date: "", dailyBest: 0, allTimeBest: 0 });
   const [recordsLoading, setRecordsLoading] = useState(true);
   const [loadingPhrase, setLoadingPhrase] = useState(false);
-  const [error, setError] = useState<"none" | "empty" | "load" | "save">("none");
+  const [error, setError] = useState<"none" | "empty" | "load" | "save" | "activity-save">("none");
+  const [activityLookupError, setActivityLookupError] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
   const [recordFlash, setRecordFlash] = useState(false);
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
@@ -83,6 +87,9 @@ export default function PhraseMixGame() {
   const pausedAtBoundaryRef = useRef(false);
   const phraseRequestIdRef = useRef(0);
   const phraseRef = useRef<HTMLDivElement>(null);
+  const activitySessionIdRef = useRef<string | null>(null);
+  const activityWordsCoveredRef = useRef(0);
+  const activitySavedRef = useRef(false);
   const nextBlank = round?.tokens.find((token) => token.hidden && !round.filledIds.includes(token.id));
 
   useEffect(() => {
@@ -94,15 +101,28 @@ export default function PhraseMixGame() {
         queueMicrotask(() => {
           if (!active) return;
           setRecords(guestRecords);
+          setWordsToday(0);
+          setActivityLookupError(false);
           setRecordsLoading(false);
         });
         return;
       }
       try {
-        const response = await fetch("/api/phrase-mix?action=records", { cache: "no-store" });
-        const result = await response.json() as { records?: Records };
-        if (!response.ok || !result.records) throw new Error("Record lookup failed");
-        if (active) setRecords(result.records);
+        const [recordsResponse, activityResponse] = await Promise.all([
+          fetch("/api/phrase-mix?action=records", { cache: "no-store" }),
+          fetch("/api/learning-activity", { cache: "no-store" }),
+        ]);
+        const recordsResult = await recordsResponse.json().catch(() => null) as { records?: Records } | null;
+        if (!recordsResponse.ok || !recordsResult?.records) throw new Error("Record lookup failed");
+        if (active) setRecords(recordsResult.records);
+        const activityResult = await activityResponse.json().catch(() => null) as { wordsToday?: number } | null;
+        const dailyWords = activityResult?.wordsToday;
+        if (!activityResponse.ok || typeof dailyWords !== "number" || !Number.isInteger(dailyWords)) {
+          if (active) setActivityLookupError(true);
+        } else if (active) {
+          setWordsToday(dailyWords);
+          setActivityLookupError(false);
+        }
       } catch {
         if (active) setError("save");
       } finally {
@@ -111,6 +131,19 @@ export default function PhraseMixGame() {
     })();
     return () => { active = false; };
   }, [authLoading, userId]);
+
+  useEffect(() => {
+    const saveBeforeExit = () => {
+      if (!userId || !activitySessionIdRef.current || activityWordsCoveredRef.current < 1 || activitySavedRef.current) return;
+      queueLearningActivitySave({
+        sessionId: activitySessionIdRef.current,
+        source: "phrase-mix",
+        wordsCovered: activityWordsCoveredRef.current,
+      });
+    };
+    window.addEventListener("pagehide", saveBeforeExit);
+    return () => window.removeEventListener("pagehide", saveBeforeExit);
+  }, [userId]);
 
   const loadNextPhrase = useCallback(async (excludedVideoId?: string): Promise<Phrase | null> => {
     const requestId = ++phraseRequestIdRef.current;
@@ -199,7 +232,32 @@ export default function PhraseMixGame() {
       const loadedPhrase = await loadNextPhrase();
       if (!loadedPhrase) return;
     }
+    activitySessionIdRef.current = crypto.randomUUID();
+    activityWordsCoveredRef.current = 0;
+    activitySavedRef.current = false;
+    setSessionWordsCovered(0);
+    setError("none");
     setPhase("playing");
+  }
+
+  async function quitGame() {
+    const sessionId = activitySessionIdRef.current;
+    const wordsCovered = activityWordsCoveredRef.current;
+    if (userId && sessionId && wordsCovered > 0 && !activitySavedRef.current) {
+      try {
+        await saveLearningActivity({ sessionId, source: "phrase-mix", wordsCovered });
+        activitySavedRef.current = true;
+        setWordsToday((current) => current + wordsCovered);
+        setSessionWordsCovered(0);
+      } catch (reason) {
+        console.error("[phrase-mix] Could not save learning activity on quit.", reason);
+        setError("activity-save");
+      }
+    } else if (!userId && wordsCovered > 0) {
+      setWordsToday((current) => current + wordsCovered);
+      setSessionWordsCovered(0);
+    }
+    setPhase("setup");
   }
 
   function skipPhrase() {
@@ -328,6 +386,8 @@ export default function PhraseMixGame() {
     setConsecutiveMistakes(0);
     const nextStreak = currentStreak + 1;
     setCurrentStreak(nextStreak);
+    activityWordsCoveredRef.current += 1;
+    setSessionWordsCovered(activityWordsCoveredRef.current);
     void saveRecord(nextStreak);
     const filledIds = [...round.filledIds, nextBlank.id];
     setRound({ ...round, filledIds });
@@ -418,6 +478,8 @@ export default function PhraseMixGame() {
           {error === "empty" && <p role="status" className="text-sm text-muted-foreground">{t("game.phraseMix.noPhrases")}</p>}
           {error === "load" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.loadError")}</p>}
           {error === "save" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.saveError")}</p>}
+          {error === "activity-save" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.activitySaveError")}</p>}
+          {activityLookupError && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.activityLookupError")}</p>}
           <Button type="button" className="w-full" disabled={recordsLoading || loadingPhrase} onClick={() => void startGame()}>
             {loadingPhrase || recordsLoading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Shuffle className="size-4" aria-hidden="true" />}
             {t("game.phraseMix.start")}
@@ -431,10 +493,23 @@ export default function PhraseMixGame() {
     <section className="space-y-4" aria-busy={loadingPhrase}>
       {videoPlayer}
 
-      <div className="grid w-full grid-cols-3 gap-1 rounded-xl border border-neutral-800 bg-neutral-900/80 p-2.5 text-center text-xs text-neutral-100 sm:gap-3 sm:px-4 sm:text-sm">
-        <div className="min-w-0"><p className="truncate text-neutral-300">{t("game.phraseMix.currentStreak")}</p><p className="font-semibold tabular-nums" aria-live="polite">{currentStreak}</p></div>
-        <div className={`min-w-0 ${recordFlash ? "animate-pulse text-amber-300" : ""}`}><p className="truncate text-neutral-300">{t("game.phraseMix.dailyBest")}</p><p className="font-semibold tabular-nums">{records.dailyBest}</p></div>
-        <div className={`min-w-0 ${recordFlash ? "animate-pulse text-amber-300" : ""}`}><p className="truncate text-neutral-300">{t("game.phraseMix.allTimeBest")}</p><p className="font-semibold tabular-nums">{records.allTimeBest}</p></div>
+      <div className="grid w-full grid-cols-2 gap-1 rounded-xl border border-neutral-800 bg-neutral-900/80 p-2.5 text-center text-xs text-neutral-100 sm:grid-cols-4 sm:gap-3 sm:px-4 sm:text-sm">
+        <div className="min-w-0">
+          <p className="truncate text-neutral-300">{t("game.phraseMix.currentStreak")}</p>
+          <p className="font-semibold tabular-nums" aria-live="polite">{currentStreak}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-neutral-300">{t("game.phraseMix.wordsToday")}</p>
+          <p className="font-semibold tabular-nums" aria-live="polite">{wordsToday + sessionWordsCovered}</p>
+        </div>
+        <div className={`min-w-0 ${recordFlash ? "animate-pulse text-amber-300" : ""}`}>
+          <p className="truncate text-neutral-300">{t("game.phraseMix.dailyBest")}</p>
+          <p className="font-semibold tabular-nums">{records.dailyBest}</p>
+        </div>
+        <div className={`min-w-0 ${recordFlash ? "animate-pulse text-amber-300" : ""}`}>
+          <p className="truncate text-neutral-300">{t("game.phraseMix.allTimeBest")}</p>
+          <p className="font-semibold tabular-nums">{records.allTimeBest}</p>
+        </div>
       </div>
 
       <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_minmax(0,1fr)]">
@@ -491,7 +566,7 @@ export default function PhraseMixGame() {
             {lineTranslationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}
           </Button>
         </div>
-        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="ghost" size="sm" onClick={() => setPhase("setup")}>
+        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="ghost" size="sm" onClick={() => void quitGame()}>
           <span className="flex w-full items-center justify-end gap-2"><LogOut className="size-4" />{t("game.quit")}</span>
         </Button>
       </div>
@@ -523,6 +598,8 @@ export default function PhraseMixGame() {
       {error === "empty" && <p role="status" className="text-sm text-muted-foreground">{t("game.phraseMix.noPhrases")}</p>}
       {error === "load" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.loadError")}</p>}
       {error === "save" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.saveError")}</p>}
+      {error === "activity-save" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.activitySaveError")}</p>}
+      {activityLookupError && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.activityLookupError")}</p>}
       <div className="sticky bottom-3 z-10 space-y-2">
         {explanationStatus === "loading" && (partialExplanation ? <StreamingExplanation data={partialExplanation} /> : <ExplanationSkeleton />)}
         {explanationStatus === "error" && <p role="alert" className="text-sm text-destructive">{explanationError}</p>}
