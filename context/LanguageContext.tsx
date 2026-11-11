@@ -2,13 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DICTIONARY, type TranslationKey } from "@/lib/i18n/dictionary";
+import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_COOKIE } from "@/lib/i18n/settings";
 import { isLanguage, isLearningLanguage, type Language, type LanguageSettings, type LearningLanguage } from "@/types/game";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthState } from "@/context/AuthContext";
 
 const GUEST_KEY = "lingo-clips:language-settings";
 const ACCOUNT_PREFIX = "lingo-clips:language-settings:v2:user:";
-const DEFAULT_SETTINGS: LanguageSettings = { uiLanguage: "ru", targetLanguage: "ru", sourceLanguage: "en" };
+const DEFAULT_SETTINGS: LanguageSettings = { uiLanguage: DEFAULT_UI_LANGUAGE, targetLanguage: "ru", sourceLanguage: "en" };
 type TranslateVars = Record<string, string | number>;
 
 type LanguageContextValue = LanguageSettings & {
@@ -48,13 +49,18 @@ function clearLegacyAccountSettings(userId: string) {
   } catch { /* Database remains the source of truth. */ }
 }
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
+function persistUiLanguage(language: Language) {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${UI_LANGUAGE_COOKIE}=${language}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+}
+
+export function LanguageProvider({ children, initialUiLanguage }: { children: ReactNode; initialUiLanguage: Language }) {
   const { userId, loading: authLoading } = useAuthState();
-  const [settings, setSettings] = useState<LanguageSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<LanguageSettings>(() => ({ ...DEFAULT_SETTINGS, uiLanguage: initialUiLanguage }));
   const [hydratedUserId, setHydratedUserId] = useState<string | null | undefined>(undefined);
   const [cloudWritableUserId, setCloudWritableUserId] = useState<string | null>(null);
   const hydrated = !authLoading && hydratedUserId === userId;
-  const visibleSettings = hydrated ? settings : DEFAULT_SETTINGS;
+  const visibleSettings = hydrated || hydratedUserId === undefined ? settings : DEFAULT_SETTINGS;
 
   useEffect(() => {
     if (authLoading) return;
@@ -117,6 +123,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, [settings, hydrated, userId]);
 
   useEffect(() => {
+    if (hydrated) persistUiLanguage(visibleSettings.uiLanguage);
+  }, [visibleSettings.uiLanguage, hydrated]);
+
+  useEffect(() => {
     if (!hydrated || !userId || cloudWritableUserId !== userId) return;
     let active = true;
     void (async () => {
@@ -134,7 +144,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { if (hydrated) document.documentElement.lang = visibleSettings.uiLanguage; }, [visibleSettings.uiLanguage, hydrated]);
 
-  const setUiLanguage = useCallback((uiLanguage: Language) => setSettings((prev) => ({ ...prev, uiLanguage })), []);
+  const setUiLanguage = useCallback((uiLanguage: Language) => {
+    persistUiLanguage(uiLanguage);
+    setSettings((prev) => ({ ...prev, uiLanguage }));
+  }, []);
   const setTargetLanguage = useCallback((targetLanguage: Language) => setSettings((prev) => ({ ...prev, targetLanguage })), []);
   const setSourceLanguage = useCallback((sourceLanguage: LearningLanguage) => setSettings((prev) => ({ ...prev, sourceLanguage })), []);
 
