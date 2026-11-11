@@ -114,6 +114,11 @@ isOneToOne: false
                       referencedColumns: ["id"]
                     }
                   ]
+                },"user_phrase_mix_records": {
+                  Row: { "all_time_best": number,"daily_best": number,"daily_date": string,"updated_at": string,"user_id": string }
+                  Insert: { "all_time_best"?: number,"daily_best"?: number,"daily_date"?: string,"updated_at"?: string,"user_id": string }
+                  Update: { "all_time_best"?: number,"daily_best"?: number,"daily_date"?: string,"updated_at"?: string,"user_id"?: string }
+                  Relationships: []
                 },"user_settings": {
                   Row: {
                     "settings_json": NonNullable<Json>,"source_language": string,"target_language": string,"ui_language": string,"updated_at": string,"user_id": string
@@ -172,6 +177,14 @@ isOneToOne: false
                 "hard_completed": number
                 "pseudonym": string
               }[]
+            }
+            "get_random_phrase_mix_line": {
+              Args: { p_language: string; p_only_favorites: boolean; p_excluded_video_id?: string | null }
+              Returns: { song_id: string; youtube_id: string; title: string; artist: string | null; line_index: number; line_text: string }[]
+            }
+            "save_phrase_mix_record": {
+              Args: { p_streak: number }
+              Returns: { daily_best: number; all_time_best: number; daily_date: string }[]
             }
           }
           Enums: {

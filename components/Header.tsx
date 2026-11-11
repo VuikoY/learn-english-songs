@@ -10,7 +10,7 @@ import AuthLink from "@/components/AuthLink";
 import GlobalSearch from "@/components/GlobalSearch";
 import { buttonVariants } from "@/components/ui/button";
 import { useLanguage } from "@/context/LanguageContext";
-import { BookMarked } from "lucide-react";
+import { BookMarked, Shuffle } from "lucide-react";
 
 export default function Header() {
   const { t } = useLanguage();
@@ -26,6 +26,10 @@ export default function Header() {
           <Link href="/collections" aria-label={t("nav.collections")} title={t("nav.collections")} className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
             <BookMarked className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">{t("nav.collections")}</span>
+          </Link>
+          <Link href="/phrase-mix" aria-label={t("nav.phraseMix")} title={t("nav.phraseMix")} className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
+            <Shuffle className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{t("nav.phraseMix")}</span>
           </Link>
           <FavoritesNavLink />
           <AuthLink />

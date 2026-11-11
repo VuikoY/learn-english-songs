@@ -24,6 +24,7 @@ export type PlayerHandle = {
 
 type Props = {
   videoId: string;
+  onReady?: () => void;
   /** Called about four times per second while the video is playing. */
   onTimeUpdate?: (seconds: number) => void;
   /** Called when playback starts (true) or pauses (false). */
@@ -37,7 +38,7 @@ const STATE_PLAYING = 1;
 const POLL_INTERVAL_MS = 250;
 
 const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
-  { videoId, onTimeUpdate, onPlayingChange },
+  { videoId, onReady, onTimeUpdate, onPlayingChange },
   ref,
 ) {
   // Store the YouTube player instance when it becomes ready.
@@ -79,6 +80,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   const handleReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
     event.target.getIframe().setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    onReady?.();
   };
 
   // Handle player state changes such as play, pause, buffering, and end.
