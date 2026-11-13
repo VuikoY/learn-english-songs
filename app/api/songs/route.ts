@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { extractVideoId } from "@/lib/youtube";
 import { isLearningLanguage } from "@/types/game";
 import { isSongDifficulty, isSongGenre } from "@/lib/songMetadata";
+import { cleanYouTubeTitle } from "@/lib/cleanYouTubeTitle";
 import type { LyricLine } from "@/lib/types";
 
 const CONTENT_TYPES = ["music_video", "movie_clip", "interview", "podcast", "shorts", "other"] as const;
@@ -49,7 +50,9 @@ export async function POST(request: Request) {
   const difficulty = isSongDifficulty(body.difficulty) ? body.difficulty : "intermediate";
   const contentType = body.contentType === undefined || body.contentType === null || body.contentType === "" ? "music_video" : isContentType(body.contentType) ? body.contentType : null;
   if (!contentType) return NextResponse.json({ error: "Invalid content category." }, { status: 400 });
-  const { data: song, error } = await db.from("songs").insert({ youtube_id: youtubeId, title: typeof body.title === "string" ? body.title.slice(0, 200) : youtubeId, artist: typeof body.artist === "string" && body.artist.trim() ? body.artist.trim() : null, thumbnail_url: `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`, language: body.language, genre, difficulty, content_type: contentType, created_by: user.id, is_public: body.isPublic !== false }).select("id").single();
+  const rawTitle = typeof body.title === "string" ? body.title.trim().slice(0, 200) : youtubeId;
+  const title = cleanYouTubeTitle(rawTitle).slice(0, 200) || rawTitle;
+  const { data: song, error } = await db.from("songs").insert({ youtube_id: youtubeId, title, raw_title: rawTitle, artist: typeof body.artist === "string" && body.artist.trim() ? body.artist.trim() : null, thumbnail_url: `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`, language: body.language, genre, difficulty, content_type: contentType, created_by: user.id, is_public: body.isPublic !== false }).select("id").single();
   if (error || !song) {
     if (error?.code === "23505") return NextResponse.json({ error: "A song with this YouTube video ID is already in the catalog." }, { status: 409 });
     if (error) logDatabaseError("song upsert", error);

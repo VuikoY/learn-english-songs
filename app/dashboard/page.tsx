@@ -14,6 +14,7 @@ import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
 import SongSearch from "@/components/SongSearch";
 import { alignPlainLyrics } from "@/lib/lrclib";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
+import { mergeShortLines } from "@/lib/lyricLines";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; artist: string | null; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; transcripts?: SongTranscript | SongTranscript[] | null };
@@ -457,37 +458,6 @@ function recalculateLineTimings(lines: LyricLine[]): LyricLine[] {
       duration: Math.max(0, Number((roundedLines[index + 1].start - line.start - 0.1).toFixed(1))),
     }
     : line);
-}
-
-function mergeShortLines(lines: LyricLine[]): LyricLine[] {
-  const mergedLines: LyricLine[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    let current = { ...lines[index] };
-    let mergedCount = 0;
-
-    while (countWords(current.text) < 3 && index + mergedCount + 1 < lines.length) {
-      const next = lines[index + mergedCount + 1];
-      if (countWords(next.text) >= 8) break;
-
-      const mergedEnd = Math.max(
-        current.start + current.duration,
-        next.start + next.duration,
-      );
-      current = {
-        ...current,
-        text: `${current.text.trim()} ${next.text.trim()}`.trim(),
-        duration: Number(Math.max(0, mergedEnd - current.start).toFixed(2)),
-      };
-      mergedCount += 1;
-    }
-
-    mergedLines.push(current);
-    index += mergedCount + 1;
-  }
-
-  return mergedLines;
 }
 
 function countWords(text: string) {

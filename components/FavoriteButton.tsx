@@ -78,8 +78,8 @@ export default function FavoriteButton({ songId, compact = false }: { songId: st
   const visibleLabel = busy ? t("common.saving") : label;
   return <button type="button" disabled={busy || authLoading} onClick={toggle} aria-pressed={favorite}
     aria-label={visibleLabel} title={visibleLabel}
-    className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-md border disabled:opacity-50 ${compact ? "gap-1 px-2 py-1 text-xs" : "gap-2 px-3 py-2 text-sm"}`}>
+    className={`inline-flex shrink-0 items-center whitespace-nowrap disabled:opacity-50 ${compact ? "size-9 justify-center rounded-full hover:text-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2" : "gap-2 rounded-md border px-3 py-2 text-sm"}`}>
     {busy ? <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" /> : <Heart className={`size-4 shrink-0 ${favorite ? "fill-rose-500 text-rose-500" : ""}`} aria-hidden="true" />}
-    <span className={compact ? "hidden xl:inline" : undefined}>{visibleLabel}</span>
+    {!compact && <span>{visibleLabel}</span>}
   </button>;
 }

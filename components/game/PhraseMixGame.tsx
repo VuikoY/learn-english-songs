@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowUpDown, ChevronUp, Globe, Loader2, LogOut, Shuffle, SkipForward, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
@@ -57,9 +58,9 @@ function maskWord(word: string): string {
 export default function PhraseMixGame() {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const streamExplanation = useStreamingExplanation();
+  const router = useRouter();
   const { userId, loading: authLoading } = useAuthState();
   const [onlyFavorites, setOnlyFavorites] = useState(false);
-  const [phase, setPhase] = useState<"setup" | "playing">("setup");
   const [phrase, setPhrase] = useState<Phrase | null>(null);
   const [round, setRound] = useState<Round | null>(null);
   const [currentStreak, setCurrentStreak] = useState(0);
@@ -68,7 +69,7 @@ export default function PhraseMixGame() {
   const [consecutiveMistakes, setConsecutiveMistakes] = useState(0);
   const [records, setRecords] = useState<Records>({ date: "", dailyBest: 0, allTimeBest: 0 });
   const [recordsLoading, setRecordsLoading] = useState(true);
-  const [loadingPhrase, setLoadingPhrase] = useState(false);
+  const [loadingPhrase, setLoadingPhrase] = useState(true);
   const [error, setError] = useState<"none" | "empty" | "load" | "save" | "activity-save">("none");
   const [activityLookupError, setActivityLookupError] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
@@ -87,6 +88,7 @@ export default function PhraseMixGame() {
   const pausedAtBoundaryRef = useRef(false);
   const phraseRequestIdRef = useRef(0);
   const phraseRef = useRef<HTMLDivElement>(null);
+  const autoStartRef = useRef(false);
   const activitySessionIdRef = useRef<string | null>(null);
   const activityWordsCoveredRef = useRef(0);
   const activitySavedRef = useRef(false);
@@ -191,6 +193,16 @@ export default function PhraseMixGame() {
     }
   }, [onlyFavorites, sourceLanguage]);
 
+  useEffect(() => {
+    if (authLoading || recordsLoading || autoStartRef.current) return;
+    autoStartRef.current = true;
+    activitySessionIdRef.current = crypto.randomUUID();
+    activityWordsCoveredRef.current = 0;
+    activitySavedRef.current = false;
+    setSessionWordsCovered(0);
+    void loadNextPhrase();
+  }, [authLoading, loadNextPhrase, recordsLoading]);
+
   async function saveRecord(score: number) {
     const date = new Date().toISOString().slice(0, 10);
     if (!userId) {
@@ -226,20 +238,6 @@ export default function PhraseMixGame() {
     }
   }
 
-  async function startGame() {
-    setCurrentStreak(0);
-    if (!phrase) {
-      const loadedPhrase = await loadNextPhrase();
-      if (!loadedPhrase) return;
-    }
-    activitySessionIdRef.current = crypto.randomUUID();
-    activityWordsCoveredRef.current = 0;
-    activitySavedRef.current = false;
-    setSessionWordsCovered(0);
-    setError("none");
-    setPhase("playing");
-  }
-
   async function quitGame() {
     const sessionId = activitySessionIdRef.current;
     const wordsCovered = activityWordsCoveredRef.current;
@@ -252,12 +250,13 @@ export default function PhraseMixGame() {
       } catch (reason) {
         console.error("[phrase-mix] Could not save learning activity on quit.", reason);
         setError("activity-save");
+        return;
       }
     } else if (!userId && wordsCovered > 0) {
       setWordsToday((current) => current + wordsCovered);
       setSessionWordsCovered(0);
     }
-    setPhase("setup");
+    router.push("/");
   }
 
   function skipPhrase() {
@@ -297,14 +296,14 @@ export default function PhraseMixGame() {
 
   const handleTimeUpdate = useCallback((seconds: number) => {
     if (
-      phase === "playing" && phrase && !loadingPhrase && !quickEditOpen &&
+      phrase && !loadingPhrase && !quickEditOpen &&
       seconds >= phrase.start + phrase.duration + AUDIO_END_BUFFER_SECONDS &&
       !pausedAtBoundaryRef.current
     ) {
       pausedAtBoundaryRef.current = true;
       playerRef.current?.pause();
     }
-  }, [loadingPhrase, phase, phrase, quickEditOpen]);
+  }, [loadingPhrase, phrase, quickEditOpen]);
 
   async function toggleExplanation() {
     if (!phrase) return;
@@ -402,7 +401,7 @@ export default function PhraseMixGame() {
   });
 
   useEffect(() => {
-    if (phase !== "playing" || loadingPhrase || !round || quickEditOpen) return;
+    if (loadingPhrase || !round || quickEditOpen) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -419,7 +418,7 @@ export default function PhraseMixGame() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loadingPhrase, nextBlank, phase, phrase, playerReady, quickEditOpen, replayPhrase, round]);
+  }, [loadingPhrase, nextBlank, phrase, playerReady, quickEditOpen, replayPhrase, round]);
 
   useEffect(() => {
     if (recordFlash) {
@@ -460,35 +459,6 @@ export default function PhraseMixGame() {
     nextLine: phrase.nextLine,
   } : undefined;
 
-  if (phase === "setup") {
-    return (
-      <div>
-        <section className="space-y-5 rounded-xl border bg-card p-5">
-          <header className="space-y-1">
-            <h2 className="flex items-center gap-2 text-lg font-semibold"><Shuffle className="size-5" aria-hidden="true" />{t("game.phraseMix.title")}</h2>
-            <p className="text-sm text-muted-foreground">{t("game.phraseMix.description")}</p>
-          </header>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} disabled={authLoading || !userId} className="size-4 accent-primary" />
-              {t("game.phraseMix.onlyFavorites")}
-            </label>
-            {!authLoading && !userId && <p className="text-xs text-muted-foreground">{t("game.phraseMix.signInFavorites")}</p>}
-          </div>
-          {error === "empty" && <p role="status" className="text-sm text-muted-foreground">{t("game.phraseMix.noPhrases")}</p>}
-          {error === "load" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.loadError")}</p>}
-          {error === "save" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.saveError")}</p>}
-          {error === "activity-save" && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.activitySaveError")}</p>}
-          {activityLookupError && <p role="alert" className="text-sm text-destructive">{t("game.phraseMix.activityLookupError")}</p>}
-          <Button type="button" className="w-full" disabled={recordsLoading || loadingPhrase} onClick={() => void startGame()}>
-            {loadingPhrase || recordsLoading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Shuffle className="size-4" aria-hidden="true" />}
-            {t("game.phraseMix.start")}
-          </Button>
-        </section>
-      </div>
-    );
-  }
-
   return (
     <section className="space-y-4" aria-busy={loadingPhrase}>
       {videoPlayer}
@@ -514,12 +484,12 @@ export default function PhraseMixGame() {
 
       <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_minmax(0,1fr)]">
         <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={loadingPhrase} onClick={skipPhrase}>
-          <SkipForward className="size-4" />{t("game.phraseMix.skip")}
+          {phrase ? <SkipForward className="size-4" /> : <Shuffle className="size-4" />}{t(phrase ? "game.phraseMix.skip" : "game.phraseMix.start")}
         </Button>
         <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={!phrase || !playerReady || loadingPhrase} onClick={replayPhrase}>
           <ArrowUpDown className="size-4" />{t("game.replay")}
         </Button>
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-1">
           <QuickEditLine
             context={lineEditContext}
             onPause={() => playerRef.current?.pause()}
@@ -565,6 +535,11 @@ export default function PhraseMixGame() {
           <Button className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-label={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-expanded={translationExpanded} disabled={!phrase} onClick={() => void toggleTranslation()}>
             {lineTranslationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}
           </Button>
+          <label className="flex items-center gap-1 whitespace-nowrap text-xs">
+            <input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} disabled={authLoading || !userId || loadingPhrase} className="size-4 accent-primary" />
+            {t("game.phraseMix.onlyFavorites")}
+          </label>
+          {!authLoading && !userId && <p className="basis-full text-center text-xs text-neutral-300">{t("game.phraseMix.signInFavorites")}</p>}
         </div>
         <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="ghost" size="sm" onClick={() => void quitGame()}>
           <span className="flex w-full items-center justify-end gap-2"><LogOut className="size-4" />{t("game.quit")}</span>

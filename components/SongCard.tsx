@@ -5,6 +5,7 @@ import FavoriteButton from "@/components/FavoriteButton";
 import type { CatalogSong } from "@/components/SongCatalog";
 import type { songMetadataLabels } from "@/lib/songMetadata";
 import { useLanguage } from "@/context/LanguageContext";
+import { cleanYouTubeTitle } from "@/lib/cleanYouTubeTitle";
 
 type MetadataLabels = ReturnType<typeof songMetadataLabels>;
 
@@ -14,10 +15,11 @@ export default function SongCard({ song, labels }: { song: CatalogSong; labels: 
     ? t(`game.difficulty.${song.completedDifficulty.toLowerCase() as "easy" | "medium" | "hard"}`)
     : null;
   const highAccuracy = typeof song.averageAccuracy === "number" && song.averageAccuracy > 80;
+  const title = cleanYouTubeTitle(song.title);
 
   return <article className="overflow-hidden rounded-xl border bg-card shadow-sm">
-    <Link href={`/song/${song.youtube_id}`}>
-      <div className="relative aspect-video overflow-hidden rounded-t-lg">
+    <div className="relative aspect-video overflow-hidden rounded-t-lg">
+      <Link href={`/song/${song.youtube_id}`} className="block h-full">
         <Image src={song.thumbnail_url || `https://i.ytimg.com/vi/${song.youtube_id}/hqdefault.jpg`} alt="" width={480} height={360} unoptimized className="h-full w-full object-cover" />
         {(song.isCompleted || song.averageAccuracy !== undefined && song.averageAccuracy !== null) && (
           <div className="absolute right-2.5 top-2.5 z-10 flex flex-col items-end gap-1.5">
@@ -50,12 +52,12 @@ export default function SongCard({ song, labels }: { song: CatalogSong; labels: 
             {t("catalog.transcriptStats", { words: song.wordCount })}
           </span>
         )}
-      </div>
-      <div className="p-4">
-        <h2 className="break-words font-semibold">{song.title}</h2>
-        <span className="sr-only">{labels.genres[song.genre]}, {labels.difficulties[song.difficulty]}</span>
-      </div>
-    </Link>
+      </Link>
+    </div>
+    <div className="p-4">
+      <h2 className="truncate font-semibold" title={title}>{title}</h2>
+      <span className="sr-only">{labels.genres[song.genre]}, {labels.difficulties[song.difficulty]}</span>
+    </div>
     <div className="flex flex-wrap items-center gap-2 px-4 pb-4">
       <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{labels.genres[song.genre]}</span>
       <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{labels.difficulties[song.difficulty]}</span>

@@ -42,14 +42,14 @@ isOneToOne: false
                   ]
                 },"songs": {
                   Row: {
-                    "artist": string | null,"content_type": string,"created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"thumbnail_url": string | null,"title": string,"youtube_id": string
+                    "artist": string | null,"content_type": string,"created_at": string,"created_by": string | null,"difficulty": string,"genre": string,"id": string,"is_public": boolean,"language": string,"raw_title": string | null,"thumbnail_url": string | null,"title": string,"youtube_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "artist"?: string | null,"content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
+                    "artist"?: string | null,"content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"raw_title"?: string | null,"thumbnail_url"?: string | null,"title": string,"youtube_id": string
                   }
                   Update: {
-                    "artist"?: string | null,"content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
+                    "artist"?: string | null,"content_type"?: string,"created_at"?: string,"created_by"?: string | null,"difficulty"?: string,"genre"?: string,"id"?: string,"is_public"?: boolean,"language"?: string,"raw_title"?: string | null,"thumbnail_url"?: string | null,"title"?: string,"youtube_id"?: string
                   }
                   Relationships: [
                     

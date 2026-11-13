@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { useLanguage } from "@/context/LanguageContext";
+import { cleanYouTubeTitle } from "@/lib/cleanYouTubeTitle";
 
 type SearchVideo = {
   videoId: string;
@@ -158,7 +159,7 @@ export default function SongSearch({ onSelectVideoUrl }: { onSelectVideoUrl: (ur
                 )}
               </div>
               <div className="flex min-w-0 flex-1 flex-col items-start">
-                <h3 className="font-semibold">{video.title}</h3>
+                <h3 className="max-w-full truncate font-semibold" title={video.title}>{cleanYouTubeTitle(video.title)}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{video.channelTitle}</p>
                 <p className="mt-3 text-sm text-green-700 dark:text-green-400">{t("search.transcriptAvailable")}</p>
                 <div className="mt-auto flex flex-wrap gap-3 pt-4">
