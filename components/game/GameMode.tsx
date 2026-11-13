@@ -150,7 +150,10 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       });
     };
     window.addEventListener("pagehide", saveBeforeExit);
-    return () => window.removeEventListener("pagehide", saveBeforeExit);
+    return () => {
+      window.removeEventListener("pagehide", saveBeforeExit);
+      saveBeforeExit();
+    };
   }, []);
 
   useEffect(() => {

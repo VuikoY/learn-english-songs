@@ -124,6 +124,11 @@ isOneToOne: false
                   Insert: { user_id: string; session_id: string; source: string; words_covered: number; occurred_at?: string | null }
                   Update: { user_id?: string; session_id?: string; source?: string; words_covered?: number; occurred_at?: string | null }
                   Relationships: []
+                },"user_daily_stats": {
+                  Row: { user_id: string; date: string; words_count: number }
+                  Insert: { user_id: string; date: string; words_count?: number }
+                  Update: { user_id?: string; date?: string; words_count?: number }
+                  Relationships: []
                 },"user_settings": {
                   Row: {
                     "settings_json": NonNullable<Json>,"source_language": string,"target_language": string,"ui_language": string,"updated_at": string,"user_id": string
@@ -199,6 +204,10 @@ isOneToOne: false
             "get_learning_word_totals": {
               Args: Record<PropertyKey, never>
               Returns: { words_covered: number; words_today: number }[]
+            }
+            "get_learning_daily_stats": {
+              Args: { p_period: string }
+              Returns: { activity_date: string; words_count: number }[]
             }
           }
           Enums: {

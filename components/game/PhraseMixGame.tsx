@@ -144,7 +144,10 @@ export default function PhraseMixGame() {
       });
     };
     window.addEventListener("pagehide", saveBeforeExit);
-    return () => window.removeEventListener("pagehide", saveBeforeExit);
+    return () => {
+      window.removeEventListener("pagehide", saveBeforeExit);
+      saveBeforeExit();
+    };
   }, [userId]);
 
   const loadNextPhrase = useCallback(async (excludedVideoId?: string): Promise<Phrase | null> => {

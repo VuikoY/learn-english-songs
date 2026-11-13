@@ -7,14 +7,66 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/context/LanguageContext";
 import { PAGE_TEXT } from "@/lib/i18n/pages";
 import { Crown } from "lucide-react";
+import type { Language } from "@/types/game";
 
 type LearningStats = { completedMedia: number; hardCompleted: number; wordsCompleted: number; averageAccuracy: number };
 type LeaderboardEntry = { pseudonym: string; words_covered: number; average_accuracy: number; completed_media: number };
+type ActivityPeriod = "7d" | "30d" | "all";
+type DailyActivity = { date: string; wordsCount: number };
+
+const LOCALE_TAGS: Record<Language, string> = {
+  ru: "ru-RU",
+  uk: "uk-UA",
+  en: "en-US",
+  pl: "pl-PL",
+  es: "es-ES",
+};
+
+function activityDate(date: string): Date {
+  return new Date(`${date}T00:00:00`);
+}
+
+function activityTick(date: string, period: ActivityPeriod, locale: string): string {
+  const value = activityDate(date);
+  if (period === "all") {
+    return new Intl.DateTimeFormat(locale, { month: "short", year: "2-digit" }).format(value);
+  }
+  const parts = new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit" }).formatToParts(value);
+  const day = parts.find((part) => part.type === "day")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  return `${day}.${month}`;
+}
+
+function activityTooltipDate(date: string, period: ActivityPeriod, locale: string): string {
+  return new Intl.DateTimeFormat(
+    locale,
+    period === "all"
+      ? { month: "long", year: "numeric" }
+      : { day: "numeric", month: "short", year: "numeric" },
+  ).format(activityDate(date));
+}
+
+function isDailyActivity(value: unknown): value is DailyActivity {
+  return value !== null &&
+    typeof value === "object" &&
+    "date" in value &&
+    typeof value.date === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value.date) &&
+    "wordsCount" in value &&
+    typeof value.wordsCount === "number" &&
+    Number.isInteger(value.wordsCount) &&
+    value.wordsCount >= 0;
+}
 
 export default function LearningStatsPage() {
   const { userId, loading: authLoading } = useAuthState();
   const { uiLanguage, t } = useLanguage();
   const text = PAGE_TEXT[uiLanguage];
+  const [activityPeriod, setActivityPeriod] = useState<ActivityPeriod>("7d");
+  const [activityData, setActivityData] = useState<DailyActivity[]>([]);
+  const [activityLoadedKey, setActivityLoadedKey] = useState<string | null>(null);
+  const [activityError, setActivityError] = useState(false);
+  const [hoveredActivityIndex, setHoveredActivityIndex] = useState<number | null>(null);
   const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
   const [learningStatsError, setLearningStatsError] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -72,6 +124,45 @@ export default function LearningStatsPage() {
     if (!authLoading && userId) void Promise.resolve().then(refresh);
   }, [authLoading, refresh, userId]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    if (!userId) return () => { active = false; controller.abort(); };
+    const requestKey = `${userId}:${activityPeriod}`;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/stats/daily?period=${activityPeriod}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const result = await response.json().catch(() => null) as { data?: unknown } | null;
+        const rows = result?.data;
+        if (!response.ok || !Array.isArray(rows)) {
+          throw new Error("Daily activity lookup failed");
+        }
+        const validRows = rows.filter(isDailyActivity);
+        if (validRows.length !== rows.length) throw new Error("Daily activity response was invalid");
+        if (active) {
+          setActivityData(validRows);
+          setActivityError(false);
+          setActivityLoadedKey(requestKey);
+        }
+      } catch (error) {
+        if (active && !(error instanceof DOMException && error.name === "AbortError")) {
+          console.error("[learning-stats] Could not load daily activity.", error);
+          setActivityData([]);
+          setActivityError(true);
+          setActivityLoadedKey(requestKey);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [activityPeriod, userId]);
+  const activityLoading = activityLoadedKey !== `${userId ?? ""}:${activityPeriod}`;
+
   if (authLoading) return <main className="mx-auto max-w-5xl p-8">{text.loading}</main>;
   if (!userId) return (
     <main className="mx-auto w-full max-w-5xl space-y-4 px-4 py-10">
@@ -109,6 +200,147 @@ export default function LearningStatsPage() {
               </p>
             </div>
           </div>
+        )}
+      </section>
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-2xl font-semibold">{t("dashboard.activityTitle")}</h2>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={t("dashboard.activityTitle")}>
+            {([
+              ["7d", "dashboard.activityPeriod7d"],
+              ["30d", "dashboard.activityPeriod30d"],
+              ["all", "dashboard.activityPeriodAll"],
+            ] as const).map(([period, label]) => (
+              <button
+                key={period}
+                type="button"
+                aria-pressed={activityPeriod === period}
+                onClick={() => setActivityPeriod(period)}
+                className="rounded-full border px-3 py-1.5 text-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+              >
+                {t(label)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {activityLoading ? (
+          <p className="text-sm text-muted-foreground" role="status">{t("dashboard.activityLoading")}</p>
+        ) : activityError ? (
+          <p className="text-sm text-destructive" role="alert">{t("dashboard.activityError")}</p>
+        ) : (
+          <>
+            <div className="relative">
+              {hoveredActivityIndex !== null && activityData[hoveredActivityIndex] && (
+                <div className="pointer-events-none absolute right-0 top-0 z-10 rounded-md border bg-popover px-3 py-2 text-sm shadow-md">
+                  <p className="font-medium">
+                    {activityTooltipDate(activityData[hoveredActivityIndex].date, activityPeriod, LOCALE_TAGS[uiLanguage])}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {t("dashboard.activityWords", {
+                      count: new Intl.NumberFormat(LOCALE_TAGS[uiLanguage]).format(
+                        activityData[hoveredActivityIndex].wordsCount,
+                      ),
+                    })}
+                  </p>
+                </div>
+              )}
+              <div className="overflow-x-auto pt-12">
+                {activityData.length > 0 && (() => {
+                  const chartWidth = Math.max(640, activityData.length * 44);
+                  const chartHeight = 240;
+                  const left = 44;
+                  const right = 12;
+                  const top = 8;
+                  const bottom = 38;
+                  const plotHeight = chartHeight - top - bottom;
+                  const plotWidth = chartWidth - left - right;
+                  const slotWidth = plotWidth / activityData.length;
+                  const maxWords = Math.max(1, ...activityData.map((item) => item.wordsCount));
+                  const ticks = [...new Set([0, Math.ceil(maxWords / 2), maxWords])];
+                  const numberFormat = new Intl.NumberFormat(LOCALE_TAGS[uiLanguage]);
+
+                  return (
+                    <svg
+                      className="block h-60"
+                      width={chartWidth}
+                      height={chartHeight}
+                      viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                      role="group"
+                      aria-label={t("dashboard.activityTitle")}
+                    >
+                      {ticks.map((tick) => {
+                        const y = top + plotHeight - (tick / maxWords) * plotHeight;
+                        return (
+                          <g key={tick}>
+                            <line x1={left} x2={chartWidth - right} y1={y} y2={y} className="stroke-border" />
+                            <text x={left - 8} y={y + 4} textAnchor="end" className="fill-muted-foreground text-[11px]">
+                              {numberFormat.format(tick)}
+                            </text>
+                          </g>
+                        );
+                      })}
+                      <text
+                        x={12}
+                        y={top + plotHeight / 2}
+                        textAnchor="middle"
+                        transform={`rotate(-90 12 ${top + plotHeight / 2})`}
+                        className="fill-muted-foreground text-[10px]"
+                      >
+                        {t("dashboard.activityYAxis")}
+                      </text>
+                      {activityData.map((item, index) => {
+                        const barHeight = (item.wordsCount / maxWords) * plotHeight;
+                        const x = left + index * slotWidth + slotWidth * 0.22;
+                        const width = slotWidth * 0.56;
+                        const dateLabel = activityTick(item.date, activityPeriod, LOCALE_TAGS[uiLanguage]);
+                        const label = `${activityTooltipDate(item.date, activityPeriod, LOCALE_TAGS[uiLanguage])}. ${t(
+                          "dashboard.activityWords",
+                          { count: numberFormat.format(item.wordsCount) },
+                        )}`;
+                        return (
+                          <g key={item.date}>
+                            <rect
+                              x={left + index * slotWidth}
+                              y={top}
+                              width={slotWidth}
+                              height={plotHeight}
+                              fill="transparent"
+                              tabIndex={0}
+                              role="graphics-symbol"
+                              aria-label={label}
+                              onMouseEnter={() => setHoveredActivityIndex(index)}
+                              onMouseLeave={() => setHoveredActivityIndex(null)}
+                              onFocus={() => setHoveredActivityIndex(index)}
+                              onBlur={() => setHoveredActivityIndex(null)}
+                            />
+                            <rect
+                              x={x}
+                              y={top + plotHeight - barHeight}
+                              width={width}
+                              height={Math.max(item.wordsCount > 0 ? 2 : 0, barHeight)}
+                              rx={4}
+                              className="fill-primary pointer-events-none"
+                            />
+                            <text
+                              x={left + index * slotWidth + slotWidth / 2}
+                              y={chartHeight - 10}
+                              textAnchor="middle"
+                              className="fill-muted-foreground text-[10px]"
+                            >
+                              {dateLabel}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  );
+                })()}
+              </div>
+            </div>
+            {(activityData.length === 0 || activityData.every((item) => item.wordsCount === 0)) && (
+              <p className="text-center text-sm text-muted-foreground">{t("dashboard.activityEmpty")}</p>
+            )}
+          </>
         )}
       </section>
       <section className="space-y-4">
