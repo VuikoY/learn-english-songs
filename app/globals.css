@@ -89,4 +89,28 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+@keyframes daily-counter-flash {
+  0%, 100% {
+    transform: scale(1);
+    color: #eab308;
+    fill: #facc15;
+    filter: drop-shadow(0 0 0 rgb(249 115 22 / 0));
+  }
+  40% {
+    transform: scale(1.18);
+    color: #f97316;
+    fill: #fb923c;
+    filter: drop-shadow(0 0 7px rgb(249 115 22 / 0.8));
+  }
+}
+
+.daily-counter-flash {
+  animation: daily-counter-flash 420ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-counter-flash {
+    animation: none;
+  }
+}
 

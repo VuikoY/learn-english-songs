@@ -33,6 +33,7 @@ import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { queueLearningActivitySave, saveLearningActivity, type LearningActivitySource } from "@/lib/learningActivity";
 import { requestTranslation } from "@/lib/translation";
+import { useDailyWordCounter } from "@/context/DailyWordCounterContext";
 import {
   DIFFICULTIES,
   HIDE_RATIO,
@@ -83,6 +84,7 @@ function maskWordPreservingApostrophes(word: string): string {
 
 export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active, learningActivitySource }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const { incrementWordsToday } = useDailyWordCounter();
   const activitySource = learningActivitySource ?? (songId ? "media" : "collection");
   const streamExplanation = useStreamingExplanation();
   const [explanationStatus, setExplanationStatus] = useState<"closed" | "loading" | "open" | "error">("closed");
@@ -492,6 +494,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   function registerCorrect(tokenId: number, bankItemId?: string) {
     const wordKey = `${round?.lineIndex ?? ""}:${tokenId}`;
     dispatch({ type: "correct", wordKey });
+    incrementWordsToday();
     setConsecutiveMistakes(0);
     const hiddenCount = round?.tokens.filter((token) => token.hidden).length ?? 0;
     if (round && round.filledIds.length + 1 >= hiddenCount && phase === "playing" && pauseRequestedRoundRef.current === round) {
