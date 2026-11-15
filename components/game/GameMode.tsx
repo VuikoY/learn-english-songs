@@ -32,6 +32,7 @@ import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { queueLearningActivitySave, saveLearningActivity, type LearningActivitySource } from "@/lib/learningActivity";
+import { requestTranslation } from "@/lib/translation";
 import {
   DIFFICULTIES,
   HIDE_RATIO,
@@ -270,45 +271,19 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     }
   }
 
-  async function toggleLineTranslation() {
+  async function showLineTranslation() {
     if (!currentLine || !round || !currentTranslationKey) return;
-    if (expandedTranslationKey === currentTranslationKey) {
-      setExpandedTranslationKey(null);
-      return;
-    }
-
     setExpandedTranslationKey(currentTranslationKey);
     if (currentLineTranslation || lineTranslationStates[currentTranslationKey] === "loading") return;
 
     setLineTranslationStates((previous) => ({ ...previous, [currentTranslationKey]: "loading" }));
     try {
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: currentLine.text,
-          sourceLang: sourceLanguage,
-          targetLang: targetLanguage,
-          ...(!getLineYoutubeId && youtubeId ? { videoId: youtubeId, lineIndex: round.lineIndex } : {}),
-        }),
+      const translation = await requestTranslation({
+        text: currentLine.text,
+        sourceLang: sourceLanguage,
+        targetLang: targetLanguage,
+        ...(!getLineYoutubeId && youtubeId ? { videoId: youtubeId, lineIndex: round.lineIndex } : {}),
       });
-      const result: unknown = await response.json().catch(() => null);
-      const payload = typeof result === "object" && result !== null
-        ? result as { translation?: unknown; error?: unknown }
-        : null;
-      if (!response.ok || typeof payload?.translation !== "string" || !payload.translation.trim()) {
-        const code = typeof payload?.error === "string" ? payload.error : "translation_unavailable";
-        const message = code === "invalid_request"
-          ? t("lyrics.translationInvalid")
-          : code === "unsupported_language"
-            ? t("lyrics.translationUnsupported")
-            : t("lyrics.translationError");
-        setLineTranslationStates((previous) => ({ ...previous, [currentTranslationKey]: "error" }));
-        setLineTranslationErrors((previous) => ({ ...previous, [currentTranslationKey]: message }));
-        return;
-      }
-
-      const translation = payload.translation;
       setLineTranslations((previous) => ({ ...previous, [currentTranslationKey]: translation }));
       setLineTranslationErrors((previous) => {
         const next = { ...previous };
@@ -320,10 +295,24 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
         delete next[currentTranslationKey];
         return next;
       });
-    } catch {
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "translation_unavailable";
+      const message = code === "invalid_request"
+        ? t("lyrics.translationInvalid")
+        : code === "unsupported_language"
+          ? t("lyrics.translationUnsupported")
+          : t("lyrics.translationError");
       setLineTranslationStates((previous) => ({ ...previous, [currentTranslationKey]: "error" }));
-      setLineTranslationErrors((previous) => ({ ...previous, [currentTranslationKey]: t("lyrics.translationError") }));
+      setLineTranslationErrors((previous) => ({ ...previous, [currentTranslationKey]: message }));
     }
+  }
+
+  function toggleLineTranslation() {
+    if (expandedTranslationKey === currentTranslationKey) {
+      setExpandedTranslationKey(null);
+      return;
+    }
+    void showLineTranslation();
   }
 
   useEffect(() => {
@@ -527,7 +516,13 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     const wordKey = `${round?.lineIndex ?? ""}:${token.id}`;
     const count = consecutiveMistakes + 1;
     setConsecutiveMistakes(count);
-    if (count < 3 || !round) return;
+    if (!round) return;
+    if (count === 1) {
+      void showLineTranslation();
+    } else if (count === 2) {
+      replayCurrentLine();
+    }
+    if (count < 3) return;
 
     dispatch({ type: "wrong" });
     dispatch({ type: "revealed", wordKey });

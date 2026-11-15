@@ -14,6 +14,7 @@ import { buildRound, countHideableWords, firstLetterOf, normalizeLetter } from "
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { queueLearningActivitySave, saveLearningActivity } from "@/lib/learningActivity";
+import { requestTranslation } from "@/lib/translation";
 import type { Explanation } from "@/lib/types";
 import type { Round } from "@/types/game";
 
@@ -87,6 +88,7 @@ export default function PhraseMixGame() {
   const playerRef = useRef<PlayerHandle>(null);
   const pausedAtBoundaryRef = useRef(false);
   const phraseRequestIdRef = useRef(0);
+  const lineTranslationRequestIdRef = useRef(0);
   const phraseRef = useRef<HTMLDivElement>(null);
   const autoStartRef = useRef(false);
   const activitySessionIdRef = useRef<string | null>(null);
@@ -152,6 +154,7 @@ export default function PhraseMixGame() {
 
   const loadNextPhrase = useCallback(async (excludedVideoId?: string): Promise<Phrase | null> => {
     const requestId = ++phraseRequestIdRef.current;
+    lineTranslationRequestIdRef.current += 1;
     setLoadingPhrase(true);
     setConsecutiveMistakes(0);
     playerRef.current?.pause();
@@ -273,10 +276,13 @@ export default function PhraseMixGame() {
     if (!nextBlank || !round) return;
 
     const mistakeCount = consecutiveMistakes + 1;
-    if (mistakeCount < 3) {
-      setConsecutiveMistakes(mistakeCount);
-      return;
+    setConsecutiveMistakes(mistakeCount);
+    if (mistakeCount === 1) {
+      void showLineTranslation();
+    } else if (mistakeCount === 2) {
+      replayPhrase();
     }
+    if (mistakeCount < 3) return;
 
     setConsecutiveMistakes(0);
     const filledIds = [...round.filledIds, nextBlank.id];
@@ -343,39 +349,43 @@ export default function PhraseMixGame() {
     }
   }
 
-  async function toggleTranslation() {
+  async function showLineTranslation() {
     if (!phrase) return;
+    setTranslationExpanded(true);
+    if (lineTranslation || lineTranslationStatus === "loading") return;
+
+    const requestId = ++lineTranslationRequestIdRef.current;
+    setLineTranslationStatus("loading");
+    setLineTranslationError("");
+    try {
+      const translation = await requestTranslation({
+        text: phrase.text,
+        sourceLang: sourceLanguage,
+        targetLang: targetLanguage,
+        videoId: phrase.youtubeId,
+        lineIndex: phrase.lineIndex,
+      });
+      if (requestId !== lineTranslationRequestIdRef.current) return;
+      setLineTranslation(translation);
+      setLineTranslationStatus("idle");
+    } catch (reason) {
+      if (requestId !== lineTranslationRequestIdRef.current) return;
+      const code = reason instanceof Error ? reason.message : "translation_unavailable";
+      setLineTranslationError(code === "invalid_request"
+        ? t("lyrics.translationInvalid")
+        : code === "unsupported_language"
+          ? t("lyrics.translationUnsupported")
+          : t("lyrics.translationError"));
+      setLineTranslationStatus("error");
+    }
+  }
+
+  function toggleTranslation() {
     if (translationExpanded) {
       setTranslationExpanded(false);
       return;
     }
-    setTranslationExpanded(true);
-    if (lineTranslation || lineTranslationStatus === "loading") return;
-
-    setLineTranslationStatus("loading");
-    setLineTranslationError("");
-    try {
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: phrase.text,
-          sourceLang: sourceLanguage,
-          targetLang: targetLanguage,
-          videoId: phrase.youtubeId,
-          lineIndex: phrase.lineIndex,
-        }),
-      });
-      const result = await response.json().catch(() => null) as { translation?: unknown } | null;
-      if (!response.ok || typeof result?.translation !== "string" || !result.translation.trim()) {
-        throw new Error(t("lyrics.translationError"));
-      }
-      setLineTranslation(result.translation);
-      setLineTranslationStatus("idle");
-    } catch (reason) {
-      setLineTranslationError(reason instanceof Error ? reason.message : t("lyrics.translationError"));
-      setLineTranslationStatus("error");
-    }
+    void showLineTranslation();
   }
 
   function handleLetter(letter: string) {
@@ -518,7 +528,10 @@ export default function PhraseMixGame() {
               setPhrase({ ...phrase, lineIndex: currentLineIndex, text: updatedLine.text, start: updatedLine.start, duration: updatedLine.duration });
               setRound(buildRound(0, updatedLine.text, { mode: "first-letter", difficulty: "hard" }, []));
               if (updatedLine.text !== phrase.text) {
+                lineTranslationRequestIdRef.current += 1;
                 setLineTranslation(null);
+                setLineTranslationStatus("idle");
+                setLineTranslationError("");
                 setTranslationExpanded(false);
                 setExplanationStatus("closed");
                 setRemoteExplanation(null);

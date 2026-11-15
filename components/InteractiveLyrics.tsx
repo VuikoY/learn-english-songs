@@ -8,6 +8,7 @@ import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/co
 import { useLanguage } from "@/context/LanguageContext";
 import type { Explanation, LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
+import { requestTranslation } from "@/lib/translation";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
 
@@ -45,31 +46,6 @@ type WordLookupState =
   | { kind: "loading"; key: string; lineIndex: number; targetLanguage: string }
   | { kind: "error"; key: string; lineIndex: number; targetLanguage: string; message: string }
   | { kind: "open"; key: string; lineIndex: number; targetLanguage: string; translation: string };
-
-async function requestTranslation(input: {
-  text: string;
-  sourceLang: string;
-  targetLang: string;
-  videoId?: string;
-  lineIndex?: number;
-}): Promise<string> {
-  const response = await fetch("/api/translate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const result: unknown = await response.json().catch(() => null);
-  const payload = typeof result === "object" && result !== null
-    ? result as { translation?: unknown; error?: unknown }
-    : null;
-  if (!response.ok) {
-    throw new Error(typeof payload?.error === "string" ? payload.error : "translation_unavailable");
-  }
-  if (typeof payload?.translation !== "string" || !payload.translation.trim()) {
-    throw new Error("translation_unavailable");
-  }
-  return payload.translation;
-}
 
 // Cache key includes normalized line text and language pair, so language variants stay separate.
 // Include the line index and text in the state key so old video states cannot be reused.
