@@ -4,6 +4,7 @@ import { extractVideoId } from "@/lib/youtube";
 import { isLearningLanguage } from "@/types/game";
 import { isSongDifficulty, isSongGenre } from "@/lib/songMetadata";
 import { cleanYouTubeTitle } from "@/lib/cleanYouTubeTitle";
+import { LINE_GAP_SECONDS } from "@/lib/lyricTiming";
 import type { LyricLine } from "@/lib/types";
 
 const CONTENT_TYPES = ["music_video", "movie_clip", "interview", "podcast", "shorts", "other"] as const;
@@ -193,7 +194,7 @@ export async function PATCH(request: Request) {
       ) continue;
       lines[index] = {
         ...currentLine,
-        duration: Math.max(0, Number((nextLine.start - currentLine.start - 0.1).toFixed(2))),
+        duration: Math.max(0, Number((nextLine.start - currentLine.start - LINE_GAP_SECONDS).toFixed(2))),
       };
     }
     const { error: transcriptError } = await db

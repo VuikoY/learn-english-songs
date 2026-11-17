@@ -34,6 +34,7 @@ type Phrase = {
 type Records = { dailyBest: number; allTimeBest: number; date: string };
 
 const GUEST_RECORDS_KEY = "lingo-clips:phrase-mix-records:v1";
+const ONLY_FAVORITES_KEY = "lingo-clips:phrase-mix-only-favorites:v1";
 
 function readGuestRecords(): Records {
   const date = new Date().toISOString().slice(0, 10);
@@ -64,6 +65,7 @@ export default function PhraseMixGame() {
   const router = useRouter();
   const { userId, loading: authLoading } = useAuthState();
   const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [favoritesPreferenceLoaded, setFavoritesPreferenceLoaded] = useState(false);
   const [phrase, setPhrase] = useState<Phrase | null>(null);
   const [round, setRound] = useState<Round | null>(null);
   const [currentStreak, setCurrentStreak] = useState(0);
@@ -94,6 +96,31 @@ export default function PhraseMixGame() {
   const activityWordsCoveredRef = useRef(0);
   const activitySavedRef = useRef(false);
   const nextBlank = round?.tokens.find((token) => token.hidden && !round.filledIds.includes(token.id));
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      try {
+        const savedPreference = localStorage.getItem(ONLY_FAVORITES_KEY);
+        if (active && (savedPreference === "true" || savedPreference === "false")) {
+          setOnlyFavorites(savedPreference === "true");
+        }
+      } catch {
+        // Keep the default when browser storage is unavailable.
+      }
+      if (active) setFavoritesPreferenceLoaded(true);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!favoritesPreferenceLoaded) return;
+    try {
+      localStorage.setItem(ONLY_FAVORITES_KEY, String(onlyFavorites));
+    } catch {
+      // Skip persistence when browser storage is unavailable.
+    }
+  }, [favoritesPreferenceLoaded, onlyFavorites]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -154,7 +181,7 @@ export default function PhraseMixGame() {
     setLineTranslationError("");
     setTranslationExpanded(false);
     setError("none");
-    const params = new URLSearchParams({ action: "next", language: sourceLanguage, onlyFavorites: String(onlyFavorites) });
+    const params = new URLSearchParams({ action: "next", language: sourceLanguage, onlyFavorites: String(onlyFavorites && Boolean(userId)) });
     if (excludedVideoId) params.set("excludeVideoId", excludedVideoId);
     try {
       let response = await fetch(`/api/phrase-mix?${params.toString()}`, { cache: "no-store" });
@@ -183,16 +210,16 @@ export default function PhraseMixGame() {
     } finally {
       if (requestId === phraseRequestIdRef.current) setLoadingPhrase(false);
     }
-  }, [onlyFavorites, sourceLanguage]);
+  }, [onlyFavorites, sourceLanguage, userId]);
 
   useEffect(() => {
-    if (authLoading || recordsLoading || autoStartRef.current) return;
+    if (authLoading || recordsLoading || !favoritesPreferenceLoaded || autoStartRef.current) return;
     autoStartRef.current = true;
     activitySessionIdRef.current = crypto.randomUUID();
     activityWordsCoveredRef.current = 0;
     activitySavedRef.current = false;
     void loadNextPhrase();
-  }, [authLoading, loadNextPhrase, recordsLoading]);
+  }, [authLoading, favoritesPreferenceLoaded, loadNextPhrase, recordsLoading]);
 
   async function saveRecord(score: number) {
     const date = new Date().toISOString().slice(0, 10);
@@ -528,7 +555,7 @@ export default function PhraseMixGame() {
             {lineTranslationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}
           </Button>
           <label className="flex items-center gap-1 whitespace-nowrap text-xs">
-            <input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} disabled={authLoading || !userId || loadingPhrase} className="size-4 accent-primary" />
+            <input type="checkbox" checked={onlyFavorites && Boolean(userId)} onChange={(event) => setOnlyFavorites(event.target.checked)} disabled={authLoading || !userId || !favoritesPreferenceLoaded || loadingPhrase} className="size-4 accent-primary" />
             {t("game.phraseMix.onlyFavorites")}
           </label>
           {!authLoading && !userId && <p className="basis-full text-center text-xs text-neutral-300">{t("game.phraseMix.signInFavorites")}</p>}

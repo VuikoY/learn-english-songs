@@ -13,7 +13,7 @@ import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty
 import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
 import SongSearch from "@/components/SongSearch";
 import { alignPlainLyrics } from "@/lib/lrclib";
-import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
+import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS, LINE_GAP_SECONDS } from "@/lib/lyricTiming";
 import { mergeShortLines } from "@/lib/lyricLines";
 
 type SongTranscript = { lines_json: LyricLine[] };
@@ -57,6 +57,7 @@ export default function DashboardPage() {
     setArtist("");
     setMessage("");
     urlInputRef.current?.focus();
+    void fetchPreview(videoUrl);
   }
 
   const refresh = useCallback(async () => {
@@ -85,10 +86,10 @@ export default function DashboardPage() {
   }, [userId]);
   useEffect(() => { void Promise.resolve().then(refresh); }, [refresh]);
 
-  async function fetchPreview() {
+  async function fetchPreview(videoUrl: string) {
     setBusy(true); setMessage("");
     try {
-      const videoId = extractVideoId(url);
+      const videoId = extractVideoId(videoUrl);
       if (!videoId) throw new Error(text.invalidYoutube);
       const meta = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
       const metadata: unknown = meta.ok ? await meta.json() : {};
@@ -203,7 +204,7 @@ export default function DashboardPage() {
     <SongSearch onSelectVideoUrl={selectVideoUrl} />
     <section><h1 className="text-3xl font-bold">{text.mySongs}</h1><div className="mt-5 grid gap-3 rounded-xl border p-5">
       <h2 className="text-xl font-semibold">{text.addYoutube}</h2>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><input ref={urlInputRef} aria-label={text.youtubeUrl} className="min-w-0 flex-1 rounded border bg-background px-3 py-2" placeholder={text.youtubeUrl} value={url} onChange={event => setUrl(stripYoutubeUrlExtras(event.target.value))}/><label className="grid gap-1 text-sm"><span>{t("favorites.category")}</span><select aria-label={t("favorites.category")} className="rounded border bg-background px-3 py-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex shrink-0 items-center gap-2 text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><button disabled={busy||!url} onClick={fetchPreview} className="shrink-0 rounded border px-4 py-2 disabled:opacity-50">{text.loadSubtitles}</button></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><input ref={urlInputRef} aria-label={text.youtubeUrl} className="min-w-0 flex-1 rounded border bg-background px-3 py-2" placeholder={text.youtubeUrl} value={url} onChange={event => setUrl(stripYoutubeUrlExtras(event.target.value))}/><label className="grid gap-1 text-sm"><span>{t("favorites.category")}</span><select aria-label={t("favorites.category")} className="rounded border bg-background px-3 py-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex shrink-0 items-center gap-2 text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><button disabled={busy||!url} onClick={() => void fetchPreview(url)} className="shrink-0 rounded border px-4 py-2 disabled:opacity-50">{text.loadSubtitles}</button></div>
       {lines.length > 0 && <div className="grid max-w-xl grid-cols-1 gap-3"><label className="grid gap-1 text-sm"><span>{metadataLabels.genre}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{metadataLabels.genres[item]}</option>)}</select></label><label className="grid gap-1 text-sm"><span>{metadataLabels.difficulty}</span><select className="block h-10 w-full appearance-none rounded border bg-background px-3" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{metadataLabels.difficulties[item]}</option>)}</select></label></div>}
       {lines.length>0&&<button disabled={saving} onClick={save} className="inline-flex items-center gap-2 rounded bg-primary px-4 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60">{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.save}</button>}
       {previewVideoId && <TranscriptTimingEditor videoId={previewVideoId} lines={lines} onLinesChange={setLines}/>}
@@ -455,7 +456,7 @@ function recalculateLineTimings(lines: LyricLine[]): LyricLine[] {
   return roundedLines.map((line, index) => index < roundedLines.length - 1
     ? {
       ...line,
-      duration: Math.max(0, Number((roundedLines[index + 1].start - line.start - 0.1).toFixed(1))),
+      duration: Math.max(0, Number((roundedLines[index + 1].start - line.start - LINE_GAP_SECONDS).toFixed(1))),
     }
     : line);
 }
@@ -531,7 +532,7 @@ function updateLineStart(lines: LyricLine[], index: number, start: number): Lyri
     if (lineIndex < 0 || lineIndex >= updated.length - 1) continue;
     updated[lineIndex] = {
       ...updated[lineIndex],
-      duration: Math.max(0, Number((updated[lineIndex + 1].start - updated[lineIndex].start - 0.1).toFixed(2))),
+      duration: Math.max(0, Number((updated[lineIndex + 1].start - updated[lineIndex].start - LINE_GAP_SECONDS).toFixed(2))),
     };
   }
 

@@ -5,6 +5,7 @@ import { Edit, Globe, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/context/LanguageContext";
 import type { LyricLine } from "@/lib/types";
+import { LINE_GAP_SECONDS } from "@/lib/lyricTiming";
 
 export type QuickEditContext = {
   songId: string;
@@ -48,7 +49,7 @@ function recalculateStart(lines: EditableLine[], lineIndex: number, start: numbe
     const current = updated.find((entry) => entry.lineIndex === index);
     const next = updated.find((entry) => entry.lineIndex === index + 1);
     if (!current || !next) continue;
-    const duration = Math.max(0, Number((next.line.start - current.line.start - 0.1).toFixed(2)));
+    const duration = Math.max(0, Number((next.line.start - current.line.start - LINE_GAP_SECONDS).toFixed(2)));
     const currentIndex = updated.indexOf(current);
     updated[currentIndex] = { ...current, line: { ...current.line, duration } };
   }
