@@ -32,8 +32,8 @@ export async function PATCH(request: Request, { params }: Context) {
       console.error("[api/word-collections] Could not verify public collection minimum", { code: countError.code });
       return NextResponse.json({ code: "VISIBILITY_UPDATE_FAILED" }, { status: 500 });
     }
-    if ((count ?? 0) < 5) {
-      return NextResponse.json({ code: "PUBLIC_COLLECTION_REQUIRES_FIVE_ITEMS" }, { status: 400 });
+    if ((count ?? 0) < 3) {
+      return NextResponse.json({ code: "PUBLIC_COLLECTION_REQUIRES_THREE_ITEMS" }, { status: 400 });
     }
   }
 
@@ -48,7 +48,7 @@ export async function PATCH(request: Request, { params }: Context) {
   if (error || !data) {
     if (error) console.error("[api/word-collections] Could not update collection visibility", { code: error.code });
     return NextResponse.json(
-      { code: error?.code === "23514" ? "PUBLIC_COLLECTION_REQUIRES_FIVE_ITEMS" : error ? "VISIBILITY_UPDATE_FAILED" : "COLLECTION_NOT_FOUND" },
+      { code: error?.code === "23514" ? "PUBLIC_COLLECTION_REQUIRES_THREE_ITEMS" : error ? "VISIBILITY_UPDATE_FAILED" : "COLLECTION_NOT_FOUND" },
       { status: error?.code === "23514" ? 400 : error ? 500 : 404 },
     );
   }

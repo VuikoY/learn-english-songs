@@ -355,7 +355,7 @@ export default function MyCollectionsPage() {
 
   async function changeVisibility(collection: Collection) {
     if (visibilitySavingId) return;
-    if (!collection.isPublic && (snippets[collection.id] ?? []).length < 5) {
+    if (!collection.isPublic && (snippets[collection.id] ?? []).length < 3) {
       setVisibilityMinimumId(collection.id);
       return;
     }
@@ -372,7 +372,7 @@ export default function MyCollectionsPage() {
       const errorCode = typeof payload === "object" && payload !== null && "code" in payload
         ? payload.code
         : null;
-      if (errorCode === "PUBLIC_COLLECTION_REQUIRES_FIVE_ITEMS") {
+      if (errorCode === "PUBLIC_COLLECTION_REQUIRES_THREE_ITEMS") {
         setVisibilityMinimumId(collection.id);
         return;
       }
@@ -430,7 +430,7 @@ export default function MyCollectionsPage() {
     const current = snippets[collectionId] ?? [];
     const persisted = persistedSnippets[collectionId] ?? [];
     if (!collectionHasUnsavedChanges(collectionId)) return;
-    if (collection.isPublic && current.length < 5) {
+    if (collection.isPublic && current.length < 3) {
       setCollectionSaveErrorId(collectionId);
       setRemoveMinimumId(collectionId);
       return;
@@ -514,7 +514,7 @@ export default function MyCollectionsPage() {
     setRemoveMinimumId(null);
     const collection = collections.find((item) => item.id === snippet.collectionId);
     const current = snippets[snippet.collectionId] ?? [];
-    if (collection?.isPublic && current.length <= 5) {
+    if (collection?.isPublic && current.length <= 3) {
       setRemoveMinimumId(snippet.id);
       return;
     }
@@ -824,7 +824,7 @@ export default function MyCollectionsPage() {
                     <div className="space-y-2">
                       {collectionSaveErrorId === collection.id && (
                         <p role="alert" className="text-sm text-destructive">
-                          {collection.isPublic && (snippets[collection.id] ?? []).length < 5
+                          {collection.isPublic && (snippets[collection.id] ?? []).length < 3
                             ? t("collections.minimumPublic")
                             : t("collections.saveChangesError")}
                         </p>

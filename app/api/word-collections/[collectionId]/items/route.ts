@@ -185,8 +185,8 @@ export async function DELETE(request: Request, { params }: Context) {
       console.error("[api/word-collections] Could not verify public collection minimum before deletion", { code: countError.code });
       return NextResponse.json({ code: "ITEM_DELETE_FAILED" }, { status: 500 });
     }
-    if ((count ?? 0) <= 5) {
-      return NextResponse.json({ code: "PUBLIC_COLLECTION_REQUIRES_FIVE_ITEMS" }, { status: 409 });
+    if ((count ?? 0) <= 3) {
+      return NextResponse.json({ code: "PUBLIC_COLLECTION_REQUIRES_THREE_ITEMS" }, { status: 409 });
     }
   }
 
@@ -201,7 +201,7 @@ export async function DELETE(request: Request, { params }: Context) {
   if (error || !data) {
     if (error) console.error("[api/word-collections] Could not delete collection item", { code: error.code });
     return NextResponse.json({
-      code: error?.code === "23514" ? "PUBLIC_COLLECTION_REQUIRES_FIVE_ITEMS" : "ITEM_DELETE_FAILED",
+      code: error?.code === "23514" ? "PUBLIC_COLLECTION_REQUIRES_THREE_ITEMS" : "ITEM_DELETE_FAILED",
     }, { status: error?.code === "23514" ? 409 : error ? 500 : 404 });
   }
   return NextResponse.json({ deleted: true });
