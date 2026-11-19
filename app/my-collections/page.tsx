@@ -95,6 +95,7 @@ export default function MyCollectionsPage() {
   const [snippets, setSnippets] = useState<Record<string, CollectionSnippet[]>>({});
   const [persistedSnippets, setPersistedSnippets] = useState<Record<string, CollectionSnippet[]>>({});
   const [collectionSearchPhrase, setCollectionSearchPhrase] = useState<Record<string, string>>({});
+  const [excludeExistingCollectionVideos, setExcludeExistingCollectionVideos] = useState<Record<string, boolean>>({});
   const [addingSnippetsCollectionId, setAddingSnippetsCollectionId] = useState<string | null>(null);
   const [collectionAddErrorId, setCollectionAddErrorId] = useState<string | null>(null);
   const [collectionAddNoResultsId, setCollectionAddNoResultsId] = useState<string | null>(null);
@@ -531,6 +532,7 @@ export default function MyCollectionsPage() {
     const normalizedPhrase = (collectionSearchPhrase[collectionId] ?? "").trim();
     const current = snippets[collectionId] ?? [];
     const persisted = persistedSnippets[collectionId] ?? [];
+    const excludeExistingVideos = excludeExistingCollectionVideos[collectionId] !== false;
     if (!normalizedPhrase || addingSnippetsCollectionId || savingCollectionId) return;
 
     setAddingSnippetsCollectionId(collectionId);
@@ -542,10 +544,12 @@ export default function MyCollectionsPage() {
         phrase: normalizedPhrase,
         language: collection.sourceLanguage,
         limit: String(SNIPPET_BATCH_SIZE),
-        excludeVideoIds: [...new Set([...current, ...persisted].map((item) => item.videoId))]
-          .filter((videoId) => /^[\w-]{11}$/u.test(videoId))
-          .join(","),
       });
+      if (excludeExistingVideos) {
+        params.set("excludeVideoIds", [...new Set([...current, ...persisted].map((item) => item.videoId))]
+          .filter((videoId) => /^[\w-]{11}$/u.test(videoId))
+          .join(","));
+      }
       const response = await fetch(`/api/snippet-search?${params.toString()}`, { cache: "no-store" });
       const payload: unknown = await response.json().catch(() => null);
       const result = typeof payload === "object" && payload !== null
@@ -554,7 +558,9 @@ export default function MyCollectionsPage() {
       if (!response.ok || !Array.isArray(result?.snippets) || !result.snippets.every(isDraftSnippet)) {
         throw new Error("SNIPPET_SEARCH_FAILED");
       }
-      const existingVideos = new Set([...current, ...persisted].map((item) => item.videoId));
+      const existingVideos = excludeExistingVideos
+        ? new Set([...current, ...persisted].map((item) => item.videoId))
+        : new Set<string>();
       const seenVideos = new Set(existingVideos);
       const additions = result.snippets
         .filter((item) => {
@@ -753,6 +759,16 @@ export default function MyCollectionsPage() {
                           className="h-10 min-w-[220px] flex-1 rounded-md border bg-background px-3"
                           disabled={savingCollectionId === collection.id || addingSnippetsCollectionId === collection.id}
                         />
+                        <label className="flex basis-full items-center gap-2 text-sm text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={excludeExistingCollectionVideos[collection.id] !== false}
+                            onChange={(event) => setExcludeExistingCollectionVideos((previous) => ({ ...previous, [collection.id]: event.target.checked }))}
+                            disabled={savingCollectionId === collection.id || addingSnippetsCollectionId === collection.id}
+                            className="size-4 accent-primary"
+                          />
+                          {t("collections.excludeExistingVideos")}
+                        </label>
                         <button
                           type="submit"
                           disabled={!collectionSearchPhrase[collection.id]?.trim() || savingCollectionId !== null || addingSnippetsCollectionId !== null}
