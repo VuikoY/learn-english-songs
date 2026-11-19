@@ -23,6 +23,20 @@ export async function PATCH(request: Request, { params }: Context) {
     return NextResponse.json({ code: "INVALID_VISIBILITY" }, { status: 400 });
   }
 
+  if (body.isPublic) {
+    const { count, error: countError } = await db
+      .from("collection_items")
+      .select("id", { count: "exact", head: true })
+      .eq("collection_id", collectionId);
+    if (countError) {
+      console.error("[api/word-collections] Could not verify public collection minimum", { code: countError.code });
+      return NextResponse.json({ code: "VISIBILITY_UPDATE_FAILED" }, { status: 500 });
+    }
+    if ((count ?? 0) < 5) {
+      return NextResponse.json({ code: "PUBLIC_COLLECTION_REQUIRES_FIVE_ITEMS" }, { status: 400 });
+    }
+  }
+
   const { data, error } = await db
     .from("word_collections")
     .update({ is_public: body.isPublic })
@@ -34,8 +48,8 @@ export async function PATCH(request: Request, { params }: Context) {
   if (error || !data) {
     if (error) console.error("[api/word-collections] Could not update collection visibility", { code: error.code });
     return NextResponse.json(
-      { code: error ? "VISIBILITY_UPDATE_FAILED" : "COLLECTION_NOT_FOUND" },
-      { status: error ? 500 : 404 },
+      { code: error?.code === "23514" ? "PUBLIC_COLLECTION_REQUIRES_FIVE_ITEMS" : error ? "VISIBILITY_UPDATE_FAILED" : "COLLECTION_NOT_FOUND" },
+      { status: error?.code === "23514" ? 400 : error ? 500 : 404 },
     );
   }
 

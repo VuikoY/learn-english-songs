@@ -10,11 +10,31 @@ function recordsResponse(dailyBest: number, allTimeBest: number, date: string) {
 }
 
 async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, row: {
-  song_id: string;
+  song_id: string | null;
+  collection_item_id: string | null;
   youtube_id: string;
-  line_index: number;
+  title: string;
+  line_index: number | null;
   line_text: string;
+  start_time: number;
+  duration: number;
 }, userId: string | null) {
+  if (row.collection_item_id !== null) {
+    if (
+      typeof row.start_time !== "number" || !Number.isFinite(row.start_time) || row.start_time < 0 ||
+      typeof row.duration !== "number" || !Number.isFinite(row.duration) || row.duration <= 0
+    ) return null;
+    return {
+      songId: row.song_id ?? "",
+      canEdit: false,
+      youtubeId: row.youtube_id,
+      lineIndex: 0,
+      text: row.line_text,
+      start: row.start_time,
+      duration: row.duration,
+    };
+  }
+  if (row.song_id === null || row.line_index === null) return null;
   const { data: transcript, error } = await db.from("transcripts").select("lines_json").eq("song_id", row.song_id).maybeSingle();
   if (error || !transcript || !Array.isArray(transcript.lines_json)) {
     console.error("[api/phrase-mix] Transcript timing lookup failed", { code: error?.code });
@@ -76,16 +96,23 @@ export async function GET(request: Request) {
 
   if (action !== "next") return NextResponse.json({ error: "INVALID_ACTION" }, { status: 400 });
   const language = params.get("language") ?? "";
-  const onlyFavorites = params.get("onlyFavorites") === "true";
+  const legacyOnlyFavorites = params.get("onlyFavorites") === "true";
+  const favoriteMedia = params.has("favoriteMedia")
+    ? params.get("favoriteMedia") === "true"
+    : legacyOnlyFavorites;
+  const favoriteCollections = params.has("favoriteCollections")
+    ? params.get("favoriteCollections") === "true"
+    : legacyOnlyFavorites;
   const excludeVideoId = params.get("excludeVideoId");
   if (!isLearningLanguage(language) || (excludeVideoId !== null && !/^[\w-]{11}$/u.test(excludeVideoId))) {
     return NextResponse.json({ error: "INVALID_INPUT" }, { status: 400 });
   }
-  if (onlyFavorites && !account) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
+  if ((favoriteMedia || favoriteCollections) && !account) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
 
   const { data, error } = await db.rpc("get_random_phrase_mix_line", {
     p_language: language,
-    p_only_favorites: onlyFavorites,
+    p_favorite_media: favoriteMedia,
+    p_favorite_collections: favoriteCollections,
     p_excluded_video_id: excludeVideoId,
   });
   if (error) {
@@ -97,7 +124,8 @@ export async function GET(request: Request) {
   if (!phrase && excludeVideoId) {
     const { data: fallback, error: fallbackError } = await db.rpc("get_random_phrase_mix_line", {
       p_language: language,
-      p_only_favorites: onlyFavorites,
+      p_favorite_media: favoriteMedia,
+      p_favorite_collections: favoriteCollections,
       p_excluded_video_id: null,
     });
     if (fallbackError) {

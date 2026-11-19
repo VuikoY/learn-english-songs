@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Search } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
-import SaveLineToCollectionButton from "@/components/SaveLineToCollectionButton";
 
 type SongResult = {
   id: string;
@@ -23,11 +22,17 @@ type LineResult = SongResult & {
   endTime: number;
 };
 
-type SearchResults = { songs: SongResult[]; lines: LineResult[] };
+type CollectionResult = { id: string; title: string; itemCount: number };
+type SearchResults = { songs: SongResult[]; lines: LineResult[]; collections: CollectionResult[] };
 
 function isSearchResults(value: unknown): value is SearchResults {
   if (typeof value !== "object" || value === null) return false;
   const result = value as Record<string, unknown>;
+  const isCollection = (item: unknown): item is CollectionResult =>
+    typeof item === "object" && item !== null &&
+    "id" in item && typeof item.id === "string" &&
+    "title" in item && typeof item.title === "string" &&
+    "itemCount" in item && typeof item.itemCount === "number";
   const isSong = (item: unknown): item is SongResult =>
     typeof item === "object" && item !== null &&
     "id" in item && typeof item.id === "string" &&
@@ -43,13 +48,14 @@ function isSearchResults(value: unknown): value is SearchResults {
     "startTime" in item && typeof item.startTime === "number" &&
     "endTime" in item && typeof item.endTime === "number";
   return Array.isArray(result.songs) && result.songs.every(isSong) &&
-    Array.isArray(result.lines) && result.lines.every(isLine);
+    Array.isArray(result.lines) && result.lines.every(isLine) &&
+    Array.isArray(result.collections) && result.collections.every(isCollection);
 }
 
 export default function GlobalSearch() {
   const { sourceLanguage, t } = useLanguage();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResults>({ songs: [], lines: [] });
+  const [results, setResults] = useState<SearchResults>({ songs: [], lines: [], collections: [] });
   const [resultsKey, setResultsKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -76,7 +82,7 @@ export default function GlobalSearch() {
         })
         .catch((cause: unknown) => {
           if (cause instanceof Error && cause.name === "AbortError") return;
-          setResults({ songs: [], lines: [] });
+          setResults({ songs: [], lines: [], collections: [] });
           setResultsKey(`${sourceLanguage}:${trimmedQuery}`);
           setError(true);
         })
@@ -107,8 +113,8 @@ export default function GlobalSearch() {
   }, []);
 
   const resultIsCurrent = resultsKey === `${sourceLanguage}:${query.trim()}`;
-  const visibleResults = resultIsCurrent ? results : { songs: [], lines: [] };
-  const hasResults = visibleResults.songs.length > 0 || visibleResults.lines.length > 0;
+  const visibleResults = resultIsCurrent ? results : { songs: [], lines: [], collections: [] };
+  const hasResults = visibleResults.songs.length > 0 || visibleResults.lines.length > 0 || visibleResults.collections.length > 0;
   const pending = loading || (query.trim().length >= 2 && !resultIsCurrent);
   const studyHref = (result: SongResult) =>
     `/song/${encodeURIComponent(result.youtubeId)}?${new URLSearchParams({
@@ -126,7 +132,7 @@ export default function GlobalSearch() {
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
-            setResults({ songs: [], lines: [] });
+            setResults({ songs: [], lines: [], collections: [] });
             setResultsKey("");
             setLoading(false);
             setError(false);
@@ -197,15 +203,31 @@ export default function GlobalSearch() {
                       >
                         {t("globalSearch.study")}
                       </Link>
-                      <SaveLineToCollectionButton
-                        songId={line.id}
-                        lineText={line.lineText}
-                        startTime={line.startTime}
-                        endTime={line.endTime}
-                      />
                     </div>
                   </div>
                 </article>
+              ))}
+            </section>
+          )}
+
+          {visibleResults.collections.length > 0 && (
+            <section aria-labelledby="global-search-collections">
+              <h2 id="global-search-collections" className="sticky top-0 border-b bg-muted/95 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("globalSearch.collections")}
+              </h2>
+              {visibleResults.collections.map((collection) => (
+                <Link
+                  key={collection.id}
+                  href={`/collections/${collection.id}`}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center justify-between gap-3 border-b px-3 py-3 last:border-0 hover:bg-accent"
+                >
+                  <span className="min-w-0 truncate text-sm font-medium">{collection.title}</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{t("globalSearch.collectionBadge")}</span>
+                    <span className="text-xs text-muted-foreground">{t("globalSearch.collectionPhrases", { count: collection.itemCount })}</span>
+                  </span>
+                </Link>
               ))}
             </section>
           )}

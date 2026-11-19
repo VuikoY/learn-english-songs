@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import CollectionLearningSession, { type CollectionLearningItem } from "@/components/CollectionLearningSession";
+import CollectionFavoriteButton from "@/components/CollectionFavoriteButton";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -55,21 +56,23 @@ function WordCollectionContent() {
       if (!db) throw new Error("SERVICE_UNAVAILABLE");
       const { data: itemRows, error: itemError } = await db
         .from("collection_items")
-        .select("id,song_id,line_text,start_time,end_time")
+        .select("id,song_id,video_id,video_title,line_text,start_time,end_time")
         .eq("collection_id", collectionId)
         .order("created_at", { ascending: true });
       if (itemError) throw itemError;
 
-      const songIds = [...new Set((itemRows ?? []).map((item) => item.song_id))];
+      const songIds = [...new Set((itemRows ?? []).flatMap((item) => item.song_id ? [item.song_id] : []))];
       const { data: songRows, error: songError } = songIds.length > 0
         ? await db.from("songs").select("id,youtube_id,title,created_by,transcripts(lines_json)").in("id", songIds)
         : { data: [], error: null };
       if (songError) throw songError;
       const songsById = new Map((songRows ?? []).map((song) => [song.id, song]));
       const loadedItems = (itemRows ?? []).flatMap((item): CollectionLearningItem[] => {
-        const song = songsById.get(item.song_id);
-        if (!song) return [];
-        const transcript = Array.isArray(song.transcripts) ? song.transcripts[0] : song.transcripts;
+        const song = item.song_id ? songsById.get(item.song_id) : undefined;
+        const youtubeId = song?.youtube_id ?? item.video_id;
+        const songTitle = song?.title ?? item.video_title;
+        if (!youtubeId || !songTitle) return [];
+        const transcript = song ? (Array.isArray(song.transcripts) ? song.transcripts[0] : song.transcripts) : null;
         const sourceLines = Array.isArray(transcript?.lines_json)
           ? transcript.lines_json as unknown as LyricLine[]
           : [];
@@ -80,13 +83,13 @@ function WordCollectionContent() {
         );
         return [{
           id: item.id,
-          youtubeId: song.youtube_id,
-          songTitle: song.title,
+          youtubeId,
+          songTitle,
           lineText: item.line_text,
           startTime,
           endTime,
-          songId: song.id,
-          authorId: song.created_by,
+          songId: song?.id ?? "",
+          authorId: song?.created_by ?? null,
           sourceLineIndex: sourceLineIndex < 0 ? null : sourceLineIndex,
           sourceLines,
         }];
@@ -127,6 +130,7 @@ function WordCollectionContent() {
         <>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <h1 className="text-3xl font-bold">{collection.title}</h1>
+            {collection.isPublic && <CollectionFavoriteButton collectionId={collection.id} />}
           </div>
 
           {items.length === 0 ? (

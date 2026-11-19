@@ -6,19 +6,27 @@ export type Database = {
   "public": {
           Tables: {
             "collection_items": {
-              Row: { id: string; collection_id: string; user_id: string; song_id: string; line_text: string; start_time: number; end_time: number; created_at: string }
-              Insert: { id?: string; collection_id: string; user_id: string; song_id: string; line_text: string; start_time: number; end_time: number; created_at?: string }
-              Update: { id?: string; collection_id?: string; user_id?: string; song_id?: string; line_text?: string; start_time?: number; end_time?: number; created_at?: string }
+              Row: { id: string; collection_id: string; user_id: string; song_id: string | null; video_id: string | null; video_title: string | null; source_language: string; line_text: string; start_time: number; end_time: number; created_at: string }
+              Insert: { id?: string; collection_id: string; user_id: string; song_id?: string | null; video_id?: string | null; video_title?: string | null; source_language?: string; line_text: string; start_time: number; end_time: number; created_at?: string }
+              Update: { id?: string; collection_id?: string; user_id?: string; song_id?: string | null; video_id?: string | null; video_title?: string | null; source_language?: string; line_text?: string; start_time?: number; end_time?: number; created_at?: string }
               Relationships: [
                 { foreignKeyName: "collection_items_collection_id_fkey"; columns: ["collection_id"]; isOneToOne: false; referencedRelation: "word_collections"; referencedColumns: ["id"] },
                 { foreignKeyName: "collection_items_song_id_fkey"; columns: ["song_id"]; isOneToOne: false; referencedRelation: "songs"; referencedColumns: ["id"] }
               ]
             }
             "word_collections": {
-              Row: { id: string; user_id: string; title: string; is_public: boolean; created_at: string }
-              Insert: { id?: string; user_id: string; title: string; is_public?: boolean; created_at?: string }
-              Update: { id?: string; user_id?: string; title?: string; is_public?: boolean; created_at?: string }
+              Row: { id: string; user_id: string; title: string; source_language: string; is_public: boolean; created_at: string }
+              Insert: { id?: string; user_id: string; title: string; source_language?: string; is_public?: boolean; created_at?: string }
+              Update: { id?: string; user_id?: string; title?: string; source_language?: string; is_public?: boolean; created_at?: string }
               Relationships: []
+            }
+            "user_favorite_collections": {
+              Row: { user_id: string; collection_id: string; created_at: string }
+              Insert: { user_id: string; collection_id: string; created_at?: string }
+              Update: { user_id?: string; collection_id?: string; created_at?: string }
+              Relationships: [
+                { foreignKeyName: "user_favorite_collections_collection_id_fkey"; columns: ["collection_id"]; isOneToOne: false; referencedRelation: "word_collections"; referencedColumns: ["id"] }
+              ]
             }
             "line_explanations": {
                   Row: {
@@ -190,8 +198,12 @@ isOneToOne: false
               }[]
             }
             "get_random_phrase_mix_line": {
-              Args: { p_language: string; p_only_favorites: boolean; p_excluded_video_id?: string | null }
-              Returns: { song_id: string; youtube_id: string; title: string; artist: string | null; line_index: number; line_text: string }[]
+              Args: { p_language: string; p_favorite_media: boolean; p_favorite_collections: boolean; p_excluded_video_id?: string | null }
+              Returns: { song_id: string | null; collection_item_id: string | null; youtube_id: string; title: string; artist: string | null; line_index: number | null; line_text: string; start_time: number; duration: number }[]
+            }
+            "get_public_word_collections": {
+              Args: { p_language?: string | null; p_search?: string | null; p_limit?: number }
+              Returns: { id: string; title: string; is_public: boolean; source_language: string; item_count: number; favorite_count: number; created_at: string }[]
             }
             "save_phrase_mix_record": {
               Args: { p_streak: number }

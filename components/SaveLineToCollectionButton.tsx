@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -32,12 +32,11 @@ function isCollectionList(value: unknown): value is { collections: Collection[] 
 
 export default function SaveLineToCollectionButton({ songId, lineText, startTime, endTime }: Props) {
   const { userId, loading: authLoading } = useAuthState();
-  const { t } = useLanguage();
+  const { t, sourceLanguage } = useLanguage();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [newTitle, setNewTitle] = useState("");
   const [status, setStatus] = useState<"idle" | "saved" | "error" | "auth">("idle");
 
   async function openSelector() {
@@ -46,7 +45,7 @@ export default function SaveLineToCollectionButton({ songId, lineText, startTime
     if (open || !userId || collections.length > 0) return;
     setLoading(true);
     try {
-      const response = await fetch("/api/word-collections?scope=mine");
+      const response = await fetch(`/api/word-collections?scope=mine&language=${encodeURIComponent(sourceLanguage)}`);
       const payload: unknown = await response.json().catch(() => null);
       if (response.status === 401) {
         setStatus("auth");
@@ -84,37 +83,6 @@ export default function SaveLineToCollectionButton({ songId, lineText, startTime
     }
   }
 
-  async function createAndAdd(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const title = newTitle.trim();
-    if (!title || loading || savingId) return;
-    setLoading(true);
-    setStatus("idle");
-    try {
-      const response = await fetch("/api/word-collections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-      const payload: unknown = await response.json().catch(() => null);
-      const collection = typeof payload === "object" && payload !== null && "collection" in payload
-        ? readCollection(payload.collection)
-        : null;
-      if (response.status === 401) {
-        setStatus("auth");
-        return;
-      }
-      if (!response.ok || !collection) throw new Error("COLLECTION_CREATE_FAILED");
-      setCollections((previous) => [collection, ...previous]);
-      setNewTitle("");
-      await addToCollection(collection);
-    } catch {
-      setStatus("error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <div className="relative">
       <button
@@ -149,22 +117,9 @@ export default function SaveLineToCollectionButton({ songId, lineText, startTime
                   ))}
                 </div>
               )}
-              {collections.length === 0 && <p className="mb-2 text-xs text-muted-foreground">{t("globalSearch.noCollections")}</p>}
-              <form onSubmit={(event) => void createAndAdd(event)} className="grid gap-2">
-                <label className="text-xs font-medium" htmlFor={`collection-title-${songId}-${startTime}`}>{t("globalSearch.newCollection")}</label>
-                <input
-                  id={`collection-title-${songId}-${startTime}`}
-                  value={newTitle}
-                  onChange={(event) => setNewTitle(event.target.value)}
-                  maxLength={80}
-                  required
-                  placeholder={t("globalSearch.collectionTitle")}
-                  className="h-9 rounded border bg-background px-2 text-sm"
-                />
-                <button type="submit" disabled={loading || savingId !== null} className="rounded bg-primary px-2 py-1.5 text-sm text-primary-foreground disabled:opacity-50">
-                  {loading ? t("globalSearch.saving") : t("globalSearch.createAndAdd")}
-                </button>
-              </form>
+              {collections.length === 0 && (
+                <a href="/my-collections" className="text-xs text-primary underline">{t("globalSearch.noCollections")}</a>
+              )}
             </>
           )}
           {status === "saved" && <p role="status" className="mt-2 text-xs text-green-700 dark:text-green-400">{t("globalSearch.saved")}</p>}

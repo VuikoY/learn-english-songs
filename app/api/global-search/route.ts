@@ -27,17 +27,26 @@ export async function GET(request: Request) {
   const db = await createSupabaseServerClient();
   if (!db) return NextResponse.json({ code: "SERVICE_UNAVAILABLE" }, { status: 503 });
 
-  const { data, error } = await db.rpc("search_song_content", {
-    search_query: query,
-    source_language: language,
-    result_limit: 6,
-  });
-  if (error || !data) {
-    console.error("[api/global-search] Database search failed", { code: error?.code });
+  const [mediaResult, collectionResult] = await Promise.all([
+    db.rpc("search_song_content", {
+      search_query: query,
+      source_language: language,
+      result_limit: 6,
+    }),
+    db.rpc("get_public_word_collections", {
+      p_language: language,
+      p_search: query,
+      p_limit: 6,
+    }),
+  ]);
+  if (mediaResult.error || !mediaResult.data || collectionResult.error || !collectionResult.data) {
+    console.error("[api/global-search] Database search failed", {
+      code: mediaResult.error?.code ?? collectionResult.error?.code,
+    });
     return NextResponse.json({ code: "SEARCH_FAILED" }, { status: 500 });
   }
 
-  const rows = data as SearchRow[];
+  const rows = mediaResult.data as SearchRow[];
   const songs = rows
     .filter((row) => row.result_kind === "song")
     .map((row) => ({
@@ -73,7 +82,12 @@ export async function GET(request: Request) {
       endTime: row.end_time,
     }));
 
-  return NextResponse.json({ songs, lines }, {
+  const collections = collectionResult.data.map((collection) => ({
+    id: collection.id,
+    title: collection.title,
+    itemCount: Number(collection.item_count),
+  }));
+  return NextResponse.json({ songs, lines, collections }, {
     headers: { "Cache-Control": "private, no-store" },
   });
 }

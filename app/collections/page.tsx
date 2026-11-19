@@ -4,8 +4,17 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
+import CollectionFavoriteButton from "@/components/CollectionFavoriteButton";
 
-type Collection = { id: string; title: string; isPublic: boolean; isOwner: boolean };
+type Collection = {
+  id: string;
+  title: string;
+  isPublic: boolean;
+  isOwner: boolean;
+  sourceLanguage: string;
+  itemCount: number;
+  favoriteCount: number;
+};
 
 function readCollection(value: unknown): Collection | null {
   if (
@@ -13,9 +22,20 @@ function readCollection(value: unknown): Collection | null {
     !("id" in value) || typeof value.id !== "string" ||
     !("title" in value) || typeof value.title !== "string" ||
     !("isPublic" in value) || typeof value.isPublic !== "boolean" ||
-    !("isOwner" in value) || typeof value.isOwner !== "boolean"
+    !("isOwner" in value) || typeof value.isOwner !== "boolean" ||
+    !("sourceLanguage" in value) || typeof value.sourceLanguage !== "string" ||
+    !("itemCount" in value) || typeof value.itemCount !== "number" ||
+    !("favoriteCount" in value) || typeof value.favoriteCount !== "number"
   ) return null;
-  return { id: value.id, title: value.title, isPublic: value.isPublic, isOwner: value.isOwner };
+  return {
+    id: value.id,
+    title: value.title,
+    isPublic: value.isPublic,
+    isOwner: value.isOwner,
+    sourceLanguage: value.sourceLanguage,
+    itemCount: value.itemCount,
+    favoriteCount: value.favoriteCount,
+  };
 }
 
 function isCollectionList(value: unknown): value is { collections: Collection[] } {
@@ -25,7 +45,7 @@ function isCollectionList(value: unknown): value is { collections: Collection[] 
 
 export default function CollectionsPage() {
   const { userId, loading: authLoading } = useAuthState();
-  const { t } = useLanguage();
+  const { t, sourceLanguage } = useLanguage();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -33,7 +53,7 @@ export default function CollectionsPage() {
   useEffect(() => {
     if (authLoading) return;
     let active = true;
-    void fetch("/api/word-collections?scope=public")
+    void fetch(`/api/word-collections?scope=public&language=${encodeURIComponent(sourceLanguage)}`)
       .then(async (response) => {
         const payload: unknown = await response.json().catch(() => null);
         if (!response.ok || !isCollectionList(payload)) throw new Error("COLLECTIONS_FAILED");
@@ -42,7 +62,7 @@ export default function CollectionsPage() {
       .catch(() => { if (active) setLoadError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [authLoading, userId]);
+  }, [authLoading, sourceLanguage, userId]);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
@@ -65,8 +85,13 @@ export default function CollectionsPage() {
                       <span className="inline-flex rounded-full border px-2 py-1 text-xs text-muted-foreground">
                         {t("collections.publicBadge")}
                       </span>
+                      <p className="text-sm text-muted-foreground">{t("collections.phraseCount", { count: collection.itemCount })}</p>
                     </div>
                   </Link>
+                  <div className="flex items-center justify-between border-t px-4 py-2">
+                    <span className="text-xs text-muted-foreground">{collection.favoriteCount}</span>
+                    <CollectionFavoriteButton collectionId={collection.id} compact />
+                  </div>
                 </li>
               ))}
             </ul>
