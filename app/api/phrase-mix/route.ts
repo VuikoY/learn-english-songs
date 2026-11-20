@@ -18,7 +18,26 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
   line_text: string;
   start_time: number;
   duration: number;
+  source_type: "media" | "collection";
+  source_title: string;
+  source_slug: string;
+  is_public: boolean | null;
 }, userId: string | null) {
+  let isFavorite = false;
+  if (userId && row.source_type === "media" && row.song_id) {
+    const { data } = await db.from("user_favorites").select("song_id").eq("user_id", userId).eq("song_id", row.song_id).maybeSingle();
+    isFavorite = Boolean(data);
+  } else if (userId && row.source_type === "collection" && row.source_slug) {
+    const { data } = await db.from("user_favorite_collections").select("collection_id").eq("user_id", userId).eq("collection_id", row.source_slug).maybeSingle();
+    isFavorite = Boolean(data);
+  }
+  const source = {
+    sourceType: row.source_type,
+    sourceTitle: row.source_title,
+    sourceSlug: row.source_slug,
+    isPublic: row.is_public,
+    isFavorite,
+  };
   if (row.collection_item_id !== null) {
     if (
       typeof row.start_time !== "number" || !Number.isFinite(row.start_time) || row.start_time < 0 ||
@@ -32,6 +51,7 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
       text: row.line_text,
       start: row.start_time,
       duration: row.duration,
+      ...source,
     };
   }
   if (row.song_id === null || row.line_index === null) return null;
@@ -67,6 +87,7 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
     text: timing.text,
     start: timing.start,
     duration: timing.duration,
+    ...source,
     previousLine: toLine(transcript.lines_json[row.line_index - 1]),
     nextLine: toLine(transcript.lines_json[row.line_index + 1]),
     ...(userId && song.created_by === userId ? { lines: transcript.lines_json.flatMap((candidate) => {

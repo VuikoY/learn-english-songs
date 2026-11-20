@@ -10,6 +10,7 @@ import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 import TranscriptTimingModal, { type TranscriptEditContext, type TranscriptEditSave } from "@/components/TranscriptTimingEditor";
+import PhraseMixFavoriteButton from "@/components/game/PhraseMixFavoriteButton";
 import { buildRound, countHideableWords, firstLetterOf, normalizeLetter } from "@/lib/game/buildRound";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
@@ -27,6 +28,11 @@ type Phrase = {
   lineIndex: number;
   start: number;
   duration: number;
+  sourceType: "media" | "collection";
+  sourceTitle: string;
+  sourceSlug: string;
+  isPublic: boolean | null;
+  isFavorite: boolean;
   previousLine?: { text: string; start: number; duration: number };
   nextLine?: { text: string; start: number; duration: number };
   lines?: { text: string; start: number; duration: number }[];
@@ -61,7 +67,7 @@ function maskWord(word: string): string {
 }
 
 export default function PhraseMixGame() {
-  const { t, sourceLanguage, targetLanguage } = useLanguage();
+  const { t, sourceLanguage, targetLanguage, uiLanguage } = useLanguage();
   const { incrementWordsToday } = useDailyWordCounter();
   const streamExplanation = useStreamingExplanation();
   const router = useRouter();
@@ -498,6 +504,18 @@ export default function PhraseMixGame() {
 
   return (
     <section className="space-y-4" aria-busy={loadingPhrase}>
+      <h1 className="text-center text-xl font-bold sm:text-2xl">{uiLanguage === "uk" ? "Мікс фраз — тренування аудіювання за відео та колекціями" : uiLanguage === "ru" ? "Микс фраз — тренировка аудирования по видео и коллекциям" : uiLanguage === "pl" ? "Miks fraz — ćwiczenie słuchania z filmów i kolekcji" : uiLanguage === "es" ? "Mezcla de frases — practica la comprensión auditiva con vídeos y colecciones" : "Phrase Mix — listening practice with videos and collections"}</h1>
+      <div className="flex h-10 min-w-0 items-center justify-between gap-3 overflow-hidden rounded-xl border border-neutral-800 bg-zinc-700 px-3 text-sm text-zinc-100" aria-live="polite">
+        {phrase ? <>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-zinc-200">{phrase.sourceType === "collection" ? (uiLanguage === "uk" ? "Колекція" : uiLanguage === "ru" ? "Коллекция" : uiLanguage === "pl" ? "Kolekcja" : uiLanguage === "es" ? "Colección" : "Collection") : (uiLanguage === "uk" ? "Медіа" : uiLanguage === "ru" ? "Медиа" : uiLanguage === "pl" ? "Media" : uiLanguage === "es" ? "Medio" : "Media")}</span>
+            {phrase.isPublic === true && phrase.sourceSlug
+              ? <a className="min-w-0 truncate text-zinc-100 underline-offset-4 hover:underline" href={phrase.sourceType === "collection" ? `/collections/${encodeURIComponent(phrase.sourceSlug)}` : `/song/${encodeURIComponent(phrase.sourceSlug)}`} target="_blank" rel="noopener">{phrase.sourceTitle}</a>
+              : <span className="min-w-0 truncate text-zinc-100">{phrase.sourceTitle}</span>}
+          </div>
+          <PhraseMixFavoriteButton sourceType={phrase.sourceType} sourceId={phrase.sourceType === "media" ? phrase.songId : phrase.sourceSlug} initialFavorite={phrase.isFavorite} />
+        </> : <span className="text-muted-foreground">&nbsp;</span>}
+      </div>
       {videoPlayer}
 
       <div className="grid w-full grid-cols-2 gap-1 rounded-xl border border-neutral-800 bg-neutral-900/80 p-2.5 text-center text-xs text-neutral-100 sm:grid-cols-3 sm:gap-3 sm:px-4 sm:text-sm">

@@ -199,7 +199,7 @@ isOneToOne: false
             }
             "get_random_phrase_mix_line": {
               Args: { p_language: string; p_favorite_media: boolean; p_favorite_collections: boolean; p_excluded_video_id?: string | null }
-              Returns: { song_id: string | null; collection_item_id: string | null; youtube_id: string; title: string; artist: string | null; line_index: number | null; line_text: string; start_time: number; duration: number }[]
+              Returns: { song_id: string | null; collection_item_id: string | null; youtube_id: string; title: string; artist: string | null; line_index: number | null; line_text: string; start_time: number; duration: number; source_type: string; source_title: string; source_slug: string; is_public: boolean | null }[]
             }
             "get_public_word_collections": {
               Args: { p_language?: string | null; p_search?: string | null; p_limit?: number }
