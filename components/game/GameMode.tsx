@@ -28,7 +28,7 @@ import {
 } from "@/lib/game/buildRound";
 import { gameReducer, initialGameState } from "@/lib/game/gameState";
 import type { Explanation, LyricLine } from "@/lib/types";
-import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
+import TranscriptTimingModal, { type TranscriptEditContext, type TranscriptEditSave } from "@/components/TranscriptTimingEditor";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { queueLearningActivitySave, saveLearningActivity, type LearningActivitySource } from "@/lib/learningActivity";
@@ -52,9 +52,9 @@ type Props = {
   getLineYoutubeId?: (lineIndex: number) => string | undefined;
   songId?: string | null;
   canEdit?: boolean;
-  getLineEditContext?: (lineIndex: number) => QuickEditContext | undefined;
+  getLineEditContext?: (lineIndex: number) => TranscriptEditContext | undefined;
   onEditPlayLine?: (seconds: number, lineIndex: number, duration: number) => void;
-  onLineSaved?: (save: QuickEditLineSave) => void;
+  onLineSaved?: (save: TranscriptEditSave) => void;
   /** Seeks to a song line and starts playback. */
   onPlayLine?: (startSeconds: number, lineIndex: number) => void;
   onStart?: (startSeconds: number, lineIndex: number) => void;
@@ -95,7 +95,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   const [lineTranslationStates, setLineTranslationStates] = useState<Record<string, "loading" | "error">>({});
   const [lineTranslationErrors, setLineTranslationErrors] = useState<Record<string, string>>({});
   const [expandedTranslationKey, setExpandedTranslationKey] = useState<string | null>(null);
-  const [quickEditOpen, setQuickEditOpen] = useState(false);
+  const [transcriptEditOpen, setTranscriptEditOpen] = useState(false);
 
   // ---------- State ----------
   const [phase, setPhase] = useState<GamePhase>("setup");
@@ -182,6 +182,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   const lineEditContext = round && currentLine
     ? getLineEditContext?.(round.lineIndex) ?? (songId ? {
       songId,
+      lines,
       lineIndex: round.lineIndex,
       line: currentLine,
       previousLineIndex: round.lineIndex > 0 ? round.lineIndex - 1 : undefined,
@@ -318,7 +319,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   }
 
   useEffect(() => {
-    if (!active || phase !== "playing" || !currentLine || quickEditOpen) {
+    if (!active || phase !== "playing" || !currentLine || transcriptEditOpen) {
       return;
     }
 
@@ -357,7 +358,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       onPause?.();
       queueMicrotask(() => setPhase("finished"));
     }
-  }, [active, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, quickEditOpen, round, startRound]);
+  }, [active, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, transcriptEditOpen, round, startRound]);
 
   useEffect(() => {
     if (phase !== "finished" || progressSavedRef.current) return;
@@ -573,7 +574,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     letterHandlerRef.current = handleLetter;
   });
 
-  const isGamePlaying = phase === "playing" && active && !quickEditOpen;
+  const isGamePlaying = phase === "playing" && active && !transcriptEditOpen;
   useEffect(() => {
     if (!isGamePlaying) return;
 
@@ -791,14 +792,14 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       {/* Song line. The ref is used for the shake animation. */}
       <div ref={lineRef} className="rounded-xl border bg-card p-5">
         <div className="flex items-start gap-3">
-        <QuickEditLine
+        <TranscriptTimingModal
           context={lineEditContext}
           onPause={() => onPause?.()}
           onPlayLine={(seconds, lineIndex, duration) => {
             if (onEditPlayLine) onEditPlayLine(seconds, lineIndex, duration);
             else onPlayLine?.(seconds, lineIndex);
           }}
-          onOpenChange={setQuickEditOpen}
+          onOpenChange={setTranscriptEditOpen}
           onSaved={onLineSaved}
         />
         <p className="min-w-0 flex-1 flex flex-wrap items-baseline gap-x-2 gap-y-3 text-xl leading-snug">

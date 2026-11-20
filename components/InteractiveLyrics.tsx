@@ -10,7 +10,7 @@ import type { Explanation, LyricLine } from "@/lib/types";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { requestTranslation } from "@/lib/translation";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
-import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
+import TranscriptTimingModal, { type TranscriptEditContext, type TranscriptEditSave } from "@/components/TranscriptTimingEditor";
 
 type Props = {
   lines: LyricLine[];
@@ -26,10 +26,10 @@ type Props = {
   getLineYoutubeId?: (lineIndex: number) => string | undefined;
   songId?: string | null;
   canEdit?: boolean;
-  getLineEditContext?: (lineIndex: number) => QuickEditContext | undefined;
+  getLineEditContext?: (lineIndex: number) => TranscriptEditContext | undefined;
   onPause?: () => void;
   onEditPlayLine?: (seconds: number, lineIndex: number, duration: number) => void;
-  onLineSaved?: (save: QuickEditLineSave) => void;
+  onLineSaved?: (save: TranscriptEditSave) => void;
 };
 
 // Explanation panel state for one lyric line.
@@ -255,6 +255,7 @@ export default function InteractiveLyrics({
             : 0;
           const editContext = getLineEditContext?.(index) ?? (songId ? {
             songId,
+            lines,
             lineIndex: index,
             line,
             previousLineIndex: index > 0 ? index - 1 : undefined,
@@ -269,7 +270,7 @@ export default function InteractiveLyrics({
               <div className="flex items-center justify-between gap-2 px-2 py-1">
                 <div className="flex shrink-0 items-center gap-1">
                   {(editingLineIndex === index || (editingLineIndex === null && isActive)) && (
-                    <QuickEditLine
+                    <TranscriptTimingModal
                       context={editContext}
                       onPause={onPause ?? onExplainStart ?? (() => undefined)}
                       onPlayLine={(seconds, lineIndex, duration) => {

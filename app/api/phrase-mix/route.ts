@@ -69,6 +69,10 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
     duration: timing.duration,
     previousLine: toLine(transcript.lines_json[row.line_index - 1]),
     nextLine: toLine(transcript.lines_json[row.line_index + 1]),
+    ...(userId && song.created_by === userId ? { lines: transcript.lines_json.flatMap((candidate) => {
+      const value = toLine(candidate);
+      return value ? [value] : [];
+    }) } : {}),
   };
 }
 

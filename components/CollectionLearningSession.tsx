@@ -11,7 +11,7 @@ import { usePersistentState } from "@/lib/storage/usePersistentState";
 import { AUDIO_END_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { DIFFICULTIES, type Difficulty, type GameSettings } from "@/types/game";
 import type { LyricLine } from "@/lib/types";
-import type { QuickEditContext, QuickEditLineSave } from "@/components/QuickEditLine";
+import type { TranscriptEditContext, TranscriptEditSave } from "@/components/TranscriptTimingEditor";
 import { useAuthState } from "@/context/AuthContext";
 
 export type CollectionLearningItem = {
@@ -96,13 +96,14 @@ export default function CollectionLearningSession({ items }: Props) {
   const playEditedLine = useCallback((seconds: number, _sourceLineIndex: number, duration: number) => {
     playerRef.current?.playRange(seconds, seconds + duration);
   }, []);
-  const getLineEditContext = useCallback((lineIndex: number): QuickEditContext | undefined => {
+  const getLineEditContext = useCallback((lineIndex: number): TranscriptEditContext | undefined => {
     const item = timeline[lineIndex]?.item;
     if (!item || item.sourceLineIndex === null) return undefined;
     const sourceLine = item.sourceLines[item.sourceLineIndex];
     if (!sourceLine) return undefined;
     return {
       songId: item.songId,
+      lines: item.sourceLines,
       lineIndex: item.sourceLineIndex,
       line: sourceLine,
       previousLineIndex: item.sourceLineIndex > 0 ? item.sourceLineIndex - 1 : undefined,
@@ -113,13 +114,19 @@ export default function CollectionLearningSession({ items }: Props) {
     };
   }, [timeline, userId]);
 
-  const saveCollectionLines = useCallback((save: QuickEditLineSave) => {
+  const saveCollectionLines = useCallback((save: TranscriptEditSave) => {
     const { songId, updates } = save;
     const byIndex = new Map(updates.map(({ lineIndex, line }) => [lineIndex, line]));
     setSessionItems((current) => current.map((entry) => {
       if (entry.songId !== songId) return entry;
       let sourceLines = save.lines ?? entry.sourceLines.map((line, index) => byIndex.get(index) ?? line);
-      let sourceLineIndex = entry.sourceLineIndex;
+      const isEditedSourceLine = entry.sourceLineIndex === save.currentLineIndex;
+      const oldSourceLine = entry.sourceLineIndex === null ? undefined : entry.sourceLines[entry.sourceLineIndex];
+      let sourceLineIndex = isEditedSourceLine && save.editedLineIndex !== undefined ? save.editedLineIndex : entry.sourceLineIndex;
+      if (save.lines && oldSourceLine && !isEditedSourceLine) {
+        const matchingIndex = save.lines.findIndex((line) => line.start === oldSourceLine.start && line.text === oldSourceLine.text);
+        if (matchingIndex >= 0) sourceLineIndex = matchingIndex;
+      }
       if (save.deleteLineIndex !== undefined && sourceLineIndex !== null) {
         if (!save.lines) sourceLines = sourceLines.filter((_, index) => index !== save.deleteLineIndex);
         if (sourceLineIndex === save.deleteLineIndex) sourceLineIndex = null;

@@ -9,7 +9,7 @@ import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/co
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
-import QuickEditLine, { type QuickEditContext, type QuickEditLineSave } from "@/components/QuickEditLine";
+import TranscriptTimingModal, { type TranscriptEditContext, type TranscriptEditSave } from "@/components/TranscriptTimingEditor";
 import { buildRound, countHideableWords, firstLetterOf, normalizeLetter } from "@/lib/game/buildRound";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
@@ -29,6 +29,7 @@ type Phrase = {
   duration: number;
   previousLine?: { text: string; start: number; duration: number };
   nextLine?: { text: string; start: number; duration: number };
+  lines?: { text: string; start: number; duration: number }[];
 };
 
 type Records = { dailyBest: number; allTimeBest: number; date: string };
@@ -86,7 +87,7 @@ export default function PhraseMixGame() {
   const [lineTranslationStatus, setLineTranslationStatus] = useState<"idle" | "loading" | "error">("idle");
   const [lineTranslationError, setLineTranslationError] = useState("");
   const [translationExpanded, setTranslationExpanded] = useState(false);
-  const [quickEditOpen, setQuickEditOpen] = useState(false);
+  const [transcriptEditOpen, setTranscriptEditOpen] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const playerRef = useRef<PlayerHandle>(null);
   const pausedAtBoundaryRef = useRef(false);
@@ -327,14 +328,14 @@ export default function PhraseMixGame() {
 
   const handleTimeUpdate = useCallback((seconds: number) => {
     if (
-      phrase && !loadingPhrase && !quickEditOpen &&
+      phrase && !loadingPhrase && !transcriptEditOpen &&
       seconds >= phrase.start + phrase.duration + AUDIO_END_BUFFER_SECONDS &&
       !pausedAtBoundaryRef.current
     ) {
       pausedAtBoundaryRef.current = true;
       playerRef.current?.pause();
     }
-  }, [loadingPhrase, phrase, quickEditOpen]);
+  }, [loadingPhrase, phrase, transcriptEditOpen]);
 
   async function toggleExplanation() {
     if (!phrase) return;
@@ -436,7 +437,7 @@ export default function PhraseMixGame() {
   });
 
   useEffect(() => {
-    if (loadingPhrase || !round || quickEditOpen) return;
+    if (loadingPhrase || !round || transcriptEditOpen) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -453,7 +454,7 @@ export default function PhraseMixGame() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loadingPhrase, nextBlank, phrase, playerReady, quickEditOpen, replayPhrase, round]);
+  }, [loadingPhrase, nextBlank, phrase, playerReady, transcriptEditOpen, replayPhrase, round]);
 
   useEffect(() => {
     if (recordFlash) {
@@ -483,8 +484,9 @@ export default function PhraseMixGame() {
       {loadingPhrase && <span className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-neutral-300" role="status"><Loader2 className="size-4 animate-spin" aria-hidden="true" />{t("game.phraseMix.next")}</span>}
     </div>
   );
-  const lineEditContext: QuickEditContext | undefined = phrase ? {
+  const lineEditContext: TranscriptEditContext | undefined = phrase ? {
     songId: phrase.songId,
+    lines: phrase.lines,
     canEdit: phrase.canEdit,
     lineIndex: phrase.lineIndex,
     line: { text: phrase.text, start: phrase.start, duration: phrase.duration },
@@ -521,21 +523,21 @@ export default function PhraseMixGame() {
           <ArrowUpDown className="size-4" />{t("game.replay")}
         </Button>
         <div className="flex min-w-0 flex-wrap items-center justify-center gap-1">
-          <QuickEditLine
+          <TranscriptTimingModal
             context={lineEditContext}
             onPause={() => playerRef.current?.pause()}
-            onOpenChange={setQuickEditOpen}
+            onOpenChange={setTranscriptEditOpen}
             onPlayLine={(seconds, _lineIndex, duration) => {
               if (!phrase) return;
               playerRef.current?.playRange(seconds, seconds + duration);
             }}
-            onSaved={(save: QuickEditLineSave) => {
+            onSaved={(save: TranscriptEditSave) => {
               if (!phrase) return;
-              const currentLineIndex = save.insert && save.insert.afterIndex < phrase.lineIndex
+              const currentLineIndex = save.editedLineIndex ?? (save.insert && save.insert.afterIndex < phrase.lineIndex
                 ? phrase.lineIndex + 1
                 : save.deleteLineIndex !== undefined && save.deleteLineIndex < phrase.lineIndex
                   ? phrase.lineIndex - 1
-                  : phrase.lineIndex;
+                  : phrase.lineIndex);
               const updatedLine = save.lines?.[currentLineIndex]
                 ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex)?.line;
               const previousLine = save.lines?.[currentLineIndex - 1]
@@ -543,7 +545,7 @@ export default function PhraseMixGame() {
               const nextLine = save.lines?.[currentLineIndex + 1]
                 ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex + 1)?.line;
               if (!updatedLine) return;
-              setPhrase({ ...phrase, lineIndex: currentLineIndex, text: updatedLine.text, start: updatedLine.start, duration: updatedLine.duration });
+              setPhrase({ ...phrase, ...(save.lines ? { lines: save.lines } : {}), lineIndex: currentLineIndex, text: updatedLine.text, start: updatedLine.start, duration: updatedLine.duration });
               setRound(buildRound(0, updatedLine.text, { mode: "first-letter", difficulty: "hard" }, []));
               if (updatedLine.text !== phrase.text) {
                 lineTranslationRequestIdRef.current += 1;

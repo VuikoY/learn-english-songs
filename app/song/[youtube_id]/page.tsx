@@ -15,7 +15,7 @@ import { DIFFICULTIES, type GameSettings } from "@/types/game";
 import { useAuthState } from "@/context/AuthContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
-import type { QuickEditLineSave } from "@/components/QuickEditLine";
+import type { TranscriptEditSave } from "@/components/TranscriptTimingEditor";
 
 type View = "read" | "play";
 
@@ -223,7 +223,7 @@ function SongPageContent() {
           />
         </div>
         <div className={view === "play" ? "" : "hidden"}>
-          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} canEdit={canEditSong} onLineSaved={(save: QuickEditLineSave) => {
+          <GameMode active={view === "play"} hasPlaybackStarted={hasPlaybackStarted} onQuit={resetVideoToStart} startRequest={gameStartRequest} key={videoId} lines={lines} currentTime={currentTime} youtubeId={videoId} songId={songDbId} canEdit={canEditSong} onLineSaved={(save: TranscriptEditSave) => {
             if (save.lines) {
               setLines(save.lines);
               return;
