@@ -23,6 +23,7 @@ import type { Round } from "@/types/game";
 type Phrase = {
   songId: string;
   canEdit: boolean;
+  collectionItemId?: string;
   youtubeId: string;
   text: string;
   lineIndex: number;
@@ -494,6 +495,7 @@ export default function PhraseMixGame() {
     songId: phrase.songId,
     lines: phrase.lines,
     canEdit: phrase.canEdit,
+    ...(phrase.sourceType === "collection" ? { collectionId: phrase.sourceSlug, collectionItemId: phrase.collectionItemId } : {}),
     lineIndex: phrase.lineIndex,
     line: { text: phrase.text, start: phrase.start, duration: phrase.duration },
     previousLineIndex: phrase.previousLine ? phrase.lineIndex - 1 : undefined,

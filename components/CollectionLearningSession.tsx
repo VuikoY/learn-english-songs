@@ -25,6 +25,8 @@ export type CollectionLearningItem = {
   authorId: string | null;
   sourceLineIndex: number | null;
   sourceLines: LyricLine[];
+  collectionId?: string;
+  collectionOwner?: boolean;
 };
 
 type Props = { items: CollectionLearningItem[] };
@@ -110,11 +112,20 @@ export default function CollectionLearningSession({ items }: Props) {
       previousLine: item.sourceLines[item.sourceLineIndex - 1],
       nextLineIndex: item.sourceLineIndex + 1 < item.sourceLines.length ? item.sourceLineIndex + 1 : undefined,
       nextLine: item.sourceLines[item.sourceLineIndex + 1],
-      canEdit: Boolean(userId && userId === item.authorId),
+      canEdit: Boolean(userId && item.collectionOwner),
+      ...(item.collectionId ? { collectionId: item.collectionId, collectionItemId: item.id } : {}),
     };
   }, [timeline, userId]);
 
   const saveCollectionLines = useCallback((save: TranscriptEditSave) => {
+    if (save.collectionItemId) {
+      const line = save.updates[0]?.line;
+      if (!line) return;
+      setSessionItems((current) => current.map((entry) => entry.id === save.collectionItemId ? {
+        ...entry, lineText: line.text, startTime: line.start, endTime: line.start + line.duration,
+      } : entry));
+      return;
+    }
     const { songId, updates } = save;
     const byIndex = new Map(updates.map(({ lineIndex, line }) => [lineIndex, line]));
     setSessionItems((current) => current.map((entry) => {

@@ -92,6 +92,8 @@ function WordCollectionContent() {
           authorId: song?.created_by ?? null,
           sourceLineIndex: sourceLineIndex < 0 ? null : sourceLineIndex,
           sourceLines,
+          collectionId,
+          collectionOwner: selected.isOwner,
         }];
       });
       setCollection(selected);

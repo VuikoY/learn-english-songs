@@ -19,9 +19,12 @@ export type TranscriptEditContext = {
   nextLine?: LyricLine;
   canEdit: boolean;
   lines?: LyricLine[];
+  collectionId?: string;
+  collectionItemId?: string;
 };
 export type TranscriptEditSave = {
   songId: string;
+  collectionItemId?: string;
   currentLineIndex: number;
   editedLineIndex?: number;
   updates: { lineIndex: number; line: LyricLine }[];
@@ -251,7 +254,7 @@ export default function TranscriptTimingModal({ context, onPause, onPlayLine, on
 
   function openEditor() {
     onPause();
-    const initial = context?.lines?.length ? context.lines : [
+    const initial = context?.collectionId ? [context.line] : context?.lines?.length ? context.lines : [
       ...(context?.previousLine ? [context.previousLine] : []),
       ...(context?.line ? [context.line] : []),
       ...(context?.nextLine ? [context.nextLine] : []),
@@ -270,6 +273,25 @@ export default function TranscriptTimingModal({ context, onPause, onPlayLine, on
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeContext || status === "saving") return;
+    if (activeContext.collectionId && activeContext.collectionItemId) {
+      const line = draftLines[activeLineIndex];
+      if (!line || !line.text.trim() || !Number.isFinite(line.start) || line.start < 0 || !Number.isFinite(line.duration) || line.duration <= 0) {
+        setStatus("invalid");
+        return;
+      }
+      setStatus("saving");
+      try {
+        const response = await fetch(`/api/word-collections/${encodeURIComponent(activeContext.collectionId)}/items`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemId: activeContext.collectionItemId, lineText: line.text, startTime: line.start, endTime: line.start + line.duration }),
+        });
+        if (!response.ok) { setStatus("error"); return; }
+        const savedLine = { ...line, text: line.text.trim() };
+        onSaved?.({ songId: activeContext.songId, collectionItemId: activeContext.collectionItemId, currentLineIndex: activeContext.lineIndex, editedLineIndex: activeLineIndex, updates: [{ lineIndex: activeContext.lineIndex, line: savedLine }], lines: [savedLine] });
+        close();
+      } catch { setStatus("error"); }
+      return;
+    }
     if (!activeContext.lines?.length) {
       setStatus("error");
       return;

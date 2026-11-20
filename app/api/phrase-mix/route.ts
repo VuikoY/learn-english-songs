@@ -18,11 +18,12 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
   line_text: string;
   start_time: number;
   duration: number;
-  source_type: "media" | "collection";
+  source_type: string;
   source_title: string;
   source_slug: string;
   is_public: boolean | null;
 }, userId: string | null) {
+  if (row.source_type !== "media" && row.source_type !== "collection") return null;
   let isFavorite = false;
   if (userId && row.source_type === "media" && row.song_id) {
     const { data } = await db.from("user_favorites").select("song_id").eq("user_id", userId).eq("song_id", row.song_id).maybeSingle();
@@ -43,9 +44,11 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
       typeof row.start_time !== "number" || !Number.isFinite(row.start_time) || row.start_time < 0 ||
       typeof row.duration !== "number" || !Number.isFinite(row.duration) || row.duration <= 0
     ) return null;
+    const { data: collection } = await db.from("word_collections").select("user_id").eq("id", row.source_slug).maybeSingle();
     return {
       songId: row.song_id ?? "",
-      canEdit: false,
+      canEdit: Boolean(userId && collection?.user_id === userId),
+      collectionItemId: row.collection_item_id,
       youtubeId: row.youtube_id,
       lineIndex: 0,
       text: row.line_text,
