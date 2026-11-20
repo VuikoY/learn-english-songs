@@ -13,7 +13,6 @@ import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty
 import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
 import SongSearch from "@/components/SongSearch";
 import { alignPlainLyrics } from "@/lib/lrclib";
-import { LINE_GAP_SECONDS } from "@/lib/lyricTiming";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; artist: string | null; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; transcripts?: SongTranscript | SongTranscript[] | null };
@@ -270,104 +269,4 @@ function SongEditor({ song, onSave, onDelete, onSync, text, uiLanguage }: { song
     }
   }
   return <details open={open} className="rounded-lg border p-4" onToggle={event=>setOpen(event.currentTarget.open)}><summary className="cursor-pointer font-medium">{song.title} <span className="text-sm text-muted-foreground">({isPublic?text.public:text.private})</span></summary><div className="mt-3 space-y-3"><div className="flex flex-wrap items-center gap-3"><Link className="text-sm text-primary underline" href={`/song/${song.youtube_id}`}>{text.openTrainer}</Link><button type="button" disabled={saving||syncing} aria-label={t("lyrics.sync")} title={t("lyrics.sync")} className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSync()}>{syncing?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<RefreshCw className="size-4" aria-hidden="true"/>}{syncing?t("lyrics.syncing"):t("lyrics.sync")}</button><button type="button" disabled={saving||syncing||deleting} aria-label={text.deleteMedia} title={text.deleteMedia} className="inline-flex items-center gap-2 rounded border border-destructive/60 px-3 py-2 text-sm text-destructive disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleDelete()}>{deleting?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<Trash2 className="size-4" aria-hidden="true"/>}{deleting?text.deleting:text.deleteMedia}</button><label className="flex items-center gap-2 whitespace-nowrap text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{t("favorites.category")}</span><select className="h-9 rounded border bg-background px-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.genre}</span><select className="h-9 max-w-52 rounded border bg-background px-2" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{labels.genres[item]}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.difficulty}</span><select className="h-9 rounded border bg-background px-2" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{labels.difficulties[item]}</option>)}</select></label></div><label className="grid max-w-xl gap-1 text-sm"><span>{t("search.artist")}</span><input maxLength={200} className="h-10 rounded border bg-background px-3" value={artist} onChange={event=>setArtist(event.target.value)}/></label>{syncMessage&&<p role="status" className="text-sm text-muted-foreground">{syncMessage}</p>}{open&&<TranscriptTimingEditor videoId={song.youtube_id} lines={lines} onLinesChange={setLines}/>}<button disabled={saving||syncing} className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSave()}>{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.saveChanges}</button></div></details>;
-}
-
-function formatTimestamp(seconds: number) {
-  const safeSeconds = Number.isFinite(seconds) ? Math.max(seconds, 0) : 0;
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainder = (safeSeconds % 60).toFixed(1).padStart(4, "0");
-  return `${minutes}:${remainder}`;
-}
-
-function recalculateLineTimings(lines: LyricLine[]): LyricLine[] {
-  const roundedLines = lines.map((line) => ({
-    ...line,
-    start: Number(line.start.toFixed(1)),
-    duration: Number(line.duration.toFixed(1)),
-  }));
-
-  return roundedLines.map((line, index) => index < roundedLines.length - 1
-    ? {
-      ...line,
-      duration: Math.max(0, Number((roundedLines[index + 1].start - line.start - LINE_GAP_SECONDS).toFixed(1))),
-    }
-    : line);
-}
-
-function countWords(text: string) {
-  return text.trim().split(/\s+/u).filter(Boolean).length;
-}
-
-function splitLongLines(lines: LyricLine[]): LyricLine[] {
-  return lines.flatMap((line) => {
-    const words = line.text.trim().split(/\s+/u).filter(Boolean);
-    if (words.length <= 7) return [line];
-
-    const chunks: string[] = [];
-    let remainingWords = words;
-    let remainingChunks = Math.ceil(words.length / 7);
-
-    while (remainingChunks > 1) {
-      const minimumWords = Math.max(1, remainingWords.length - (remainingChunks - 1) * 7);
-      const maximumWords = Math.min(7, remainingWords.length - (remainingChunks - 1));
-      const targetWords = Math.min(maximumWords, Math.max(minimumWords, Math.round(remainingWords.length / remainingChunks)));
-      const punctuationCandidates = Array.from(
-        { length: maximumWords - minimumWords + 1 },
-        (_, index) => minimumWords + index,
-      )
-        .filter((wordCount) => Math.abs(wordCount - targetWords) <= 2)
-        .map((wordCount) => {
-          const ending = remainingWords[wordCount - 1].replace(/["'’”»)\]}]+$/u, "");
-          const punctuationRank = /[.!?…]+$/u.test(ending) ? 2 : /\p{P}$/u.test(ending) ? 1 : 0;
-          return { wordCount, punctuationRank };
-        })
-        .filter((candidate) => candidate.punctuationRank > 0)
-        .sort((a, b) => b.punctuationRank - a.punctuationRank || Math.abs(a.wordCount - targetWords) - Math.abs(b.wordCount - targetWords));
-      const splitAt = punctuationCandidates[0]?.wordCount ?? targetWords;
-
-      chunks.push(remainingWords.slice(0, splitAt).join(" "));
-      remainingWords = remainingWords.slice(splitAt);
-      remainingChunks -= 1;
-    }
-    chunks.push(remainingWords.join(" "));
-
-    const totalCharacters = chunks.reduce((total, chunk) => total + chunk.length, 0);
-    const lineEnd = line.start + line.duration;
-    const lineWithoutTranslations = { ...line };
-    delete lineWithoutTranslations.translations;
-    let elapsedCharacters = 0;
-    let previousBoundary = line.start;
-
-    return chunks.map((text, index) => {
-      const start = index === 0 ? line.start : previousBoundary;
-      elapsedCharacters += text.length;
-      const end = index === chunks.length - 1
-        ? lineEnd
-        : Number((line.start + line.duration * elapsedCharacters / totalCharacters).toFixed(2));
-      previousBoundary = end;
-
-      return {
-        ...lineWithoutTranslations,
-        text,
-        start,
-        duration: Number(Math.max(0, end - start).toFixed(2)),
-      };
-    });
-  });
-}
-
-function updateLineStart(lines: LyricLine[], index: number, start: number): LyricLine[] {
-  const updated = lines.map((line, lineIndex) => lineIndex === index ? { ...line, start } : line);
-  const durationBefore = index - 1;
-  const durationAfter = index;
-
-  for (const lineIndex of [durationBefore, durationAfter]) {
-    if (lineIndex < 0 || lineIndex >= updated.length - 1) continue;
-    updated[lineIndex] = {
-      ...updated[lineIndex],
-      duration: Math.max(0, Number((updated[lineIndex + 1].start - updated[lineIndex].start - LINE_GAP_SECONDS).toFixed(2))),
-    };
-  }
-
-  return updated;
 }
