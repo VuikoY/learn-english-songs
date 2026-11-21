@@ -92,6 +92,7 @@ export default function MyCollectionsPage() {
   const { uiLanguage, sourceLanguage, t } = useLanguage();
   const text = PAGE_TEXT[uiLanguage];
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [collectionTitles, setCollectionTitles] = useState<Record<string, string>>({});
   const [snippets, setSnippets] = useState<Record<string, CollectionSnippet[]>>({});
   const [persistedSnippets, setPersistedSnippets] = useState<Record<string, CollectionSnippet[]>>({});
   const [collectionSearchPhrase, setCollectionSearchPhrase] = useState<Record<string, string>>({});
@@ -181,6 +182,7 @@ export default function MyCollectionsPage() {
 
         if (active) {
           setCollections(ownCollections);
+          setCollectionTitles(Object.fromEntries(ownCollections.map((collection) => [collection.id, collection.title])));
           setSnippets(loadedSnippets);
           setPersistedSnippets(loadedSnippets);
         }
@@ -329,6 +331,7 @@ export default function MyCollectionsPage() {
         throw new Error("COLLECTION_SAVE_FAILED");
       }
       setCollections((previous) => [collection, ...previous]);
+      setCollectionTitles((previous) => ({ ...previous, [collection.id]: collection.title }));
       setSnippets((previous) => ({
         ...previous,
         [collection.id]: savedItems.map((item) => ({ ...item, collectionId: collection.id })),
@@ -415,6 +418,8 @@ export default function MyCollectionsPage() {
   }
 
   function collectionHasUnsavedChanges(collectionId: string): boolean {
+    const collection = collections.find((item) => item.id === collectionId);
+    if (collection && (collectionTitles[collectionId] ?? collection.title).trim() !== collection.title) return true;
     const current = snippets[collectionId] ?? [];
     const persisted = persistedSnippets[collectionId] ?? [];
     if (current.length !== persisted.length) return true;
@@ -431,6 +436,11 @@ export default function MyCollectionsPage() {
     const current = snippets[collectionId] ?? [];
     const persisted = persistedSnippets[collectionId] ?? [];
     if (!collectionHasUnsavedChanges(collectionId)) return;
+    const updatedTitle = (collectionTitles[collectionId] ?? collection.title).trim();
+    if (!updatedTitle) {
+      setCollectionSaveErrorId(collectionId);
+      return;
+    }
     if (collection.isPublic && current.length < 3) {
       setCollectionSaveErrorId(collectionId);
       setRemoveMinimumId(collectionId);
@@ -454,6 +464,14 @@ export default function MyCollectionsPage() {
     const additions = current.filter((item) => !originalById.has(item.id));
     const savedIds = new Map<string, string>();
     try {
+      if (updatedTitle !== collection.title) {
+        const response = await fetch(`/api/word-collections/${encodeURIComponent(collectionId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: updatedTitle }),
+        });
+        if (!response.ok) throw new Error("COLLECTION_TITLE_UPDATE_FAILED");
+      }
       const requests = [
         ...updates.map(async (item) => {
           const response = await fetch(`/api/word-collections/${encodeURIComponent(collectionId)}/items`, {
@@ -499,7 +517,7 @@ export default function MyCollectionsPage() {
       const savedCollectionItems = current.map((item) => ({ ...item, id: savedIds.get(item.id) ?? item.id }));
       setSnippets((previous) => ({ ...previous, [collectionId]: savedCollectionItems }));
       setPersistedSnippets((previous) => ({ ...previous, [collectionId]: savedCollectionItems }));
-      setCollections((previous) => previous.map((item) => item.id === collectionId ? { ...item, itemCount: current.length } : item));
+      setCollections((previous) => previous.map((item) => item.id === collectionId ? { ...item, title: updatedTitle, itemCount: current.length } : item));
     } catch (error) {
       console.error("[my-collections] Could not save collection changes.", {
         errorType: error instanceof Error ? error.name : "UnknownError",
@@ -723,6 +741,18 @@ export default function MyCollectionsPage() {
                       <span className="shrink-0 text-xs text-muted-foreground">({t(collection.isPublic ? "collections.publicBadge" : "collections.privateBadge")})</span>
                     </summary>
                     <div className="space-y-3 border-t px-3 py-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium" htmlFor={`collection-title-${collection.id}`}>{t("collections.newName")}</label>
+                        <input
+                          id={`collection-title-${collection.id}`}
+                          value={collectionTitles[collection.id] ?? collection.title}
+                          onChange={(event) => setCollectionTitles((previous) => ({ ...previous, [collection.id]: event.target.value }))}
+                          maxLength={80}
+                          required
+                          disabled={savingCollectionId === collection.id || addingSnippetsCollectionId === collection.id}
+                          className="h-10 w-full rounded-md border bg-background px-3"
+                        />
+                      </div>
                       <Link href={`/collections/${collection.id}`} className="text-sm font-medium text-primary underline-offset-4 hover:underline">
                         {t("collections.open")}
                       </Link>

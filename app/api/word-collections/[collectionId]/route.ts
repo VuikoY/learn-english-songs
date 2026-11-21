@@ -19,11 +19,16 @@ export async function PATCH(request: Request, { params }: Context) {
   }
 
   const body: unknown = await request.json().catch(() => null);
-  if (typeof body !== "object" || body === null || !("isPublic" in body) || typeof body.isPublic !== "boolean") {
-    return NextResponse.json({ code: "INVALID_VISIBILITY" }, { status: 400 });
+  const record = typeof body === "object" && body !== null ? body as Record<string, unknown> : null;
+  const hasVisibility = typeof record?.isPublic === "boolean";
+  const title = typeof record?.title === "string" ? record.title.trim() : null;
+  if (!record || (!hasVisibility && title === null) ||
+    ("isPublic" in record && typeof record.isPublic !== "boolean") ||
+    ("title" in record && (typeof record.title !== "string" || !title || title.length > 80))) {
+    return NextResponse.json({ code: "INVALID_COLLECTION_UPDATE" }, { status: 400 });
   }
 
-  if (body.isPublic) {
+  if (record.isPublic === true) {
     const { count, error: countError } = await db
       .from("collection_items")
       .select("id", { count: "exact", head: true })
@@ -37,12 +42,15 @@ export async function PATCH(request: Request, { params }: Context) {
     }
   }
 
+  const updates: { is_public?: boolean; title?: string } = {};
+  if (hasVisibility) updates.is_public = record.isPublic as boolean;
+  if (title !== null) updates.title = title;
   const { data, error } = await db
     .from("word_collections")
-    .update({ is_public: body.isPublic })
+    .update(updates)
     .eq("id", collectionId)
     .eq("user_id", user.id)
-    .select("id,is_public")
+    .select("id,is_public,title")
     .maybeSingle();
 
   if (error || !data) {
@@ -53,5 +61,5 @@ export async function PATCH(request: Request, { params }: Context) {
     );
   }
 
-  return NextResponse.json({ isPublic: data.is_public });
+  return NextResponse.json({ isPublic: data.is_public, title: data.title });
 }
