@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import CollectionFavoriteButton from "@/components/CollectionFavoriteButton";
+import CollectionPhrasePreview from "@/components/CollectionPhrasePreview";
 
 type Collection = {
   id: string;
@@ -12,8 +14,10 @@ type Collection = {
   isPublic: boolean;
   isOwner: boolean;
   sourceLanguage: string;
-  itemCount: number;
   favoriteCount: number;
+  previewVideoIds: string[];
+  previewPhrases: string[];
+  wordCount: number;
 };
 
 function readCollection(value: unknown): Collection | null {
@@ -24,8 +28,12 @@ function readCollection(value: unknown): Collection | null {
     !("isPublic" in value) || typeof value.isPublic !== "boolean" ||
     !("isOwner" in value) || typeof value.isOwner !== "boolean" ||
     !("sourceLanguage" in value) || typeof value.sourceLanguage !== "string" ||
-    !("itemCount" in value) || typeof value.itemCount !== "number" ||
-    !("favoriteCount" in value) || typeof value.favoriteCount !== "number"
+    !("favoriteCount" in value) || typeof value.favoriteCount !== "number" ||
+    !("previewVideoIds" in value) || !Array.isArray(value.previewVideoIds) ||
+    !value.previewVideoIds.every((videoId) => typeof videoId === "string") ||
+    !("previewPhrases" in value) || !Array.isArray(value.previewPhrases) ||
+    !value.previewPhrases.every((phrase) => typeof phrase === "string") ||
+    !("wordCount" in value) || typeof value.wordCount !== "number"
   ) return null;
   return {
     id: value.id,
@@ -33,8 +41,10 @@ function readCollection(value: unknown): Collection | null {
     isPublic: value.isPublic,
     isOwner: value.isOwner,
     sourceLanguage: value.sourceLanguage,
-    itemCount: value.itemCount,
     favoriteCount: value.favoriteCount,
+    previewVideoIds: value.previewVideoIds,
+    previewPhrases: value.previewPhrases,
+    wordCount: value.wordCount,
   };
 }
 
@@ -67,6 +77,9 @@ export default function CollectionsPage() {
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
       <h1 className="text-3xl font-bold">{t("collections.title")}</h1>
+      <p className="-mt-4 text-muted-foreground">
+        Master specific phrasal verbs, connected speech reductions, and tricky grammar in real video context.
+      </p>
       {authLoading ? (
         <p role="status" className="text-muted-foreground">{t("collections.loading")}</p>
       ) : (
@@ -79,19 +92,24 @@ export default function CollectionsPage() {
               {collections.map((collection) => (
                 <li key={collection.id} className="overflow-hidden rounded-xl border bg-card shadow-sm">
                   <Link href={`/collections/${collection.id}`} className="block">
-                    <div className="flex aspect-video items-center justify-center bg-muted text-4xl text-muted-foreground" aria-hidden="true">▶</div>
-                    <div className="space-y-2 p-4">
-                      <h2 className="break-words font-semibold">{collection.title}</h2>
-                      <span className="inline-flex rounded-full border px-2 py-1 text-xs text-muted-foreground">
-                        {t("collections.publicBadge")}
-                      </span>
-                      <p className="text-sm text-muted-foreground">{t("collections.phraseCount", { count: collection.itemCount })}</p>
+                    <div className="relative flex aspect-[2/1] overflow-hidden bg-muted">
+                      {collection.previewVideoIds.length > 0 ? (
+                        <Image src={`https://i.ytimg.com/vi/${collection.previewVideoIds[0]}/mqdefault.jpg`} alt="" width={320} height={180} unoptimized className="h-full w-full object-cover" />
+                      ) : <div className="w-full" />}
+                      <div className="absolute bottom-2.5 right-2.5 flex flex-col items-end gap-1">
+                        <span className="rounded-full bg-black/30 px-2.5 py-1 text-xs font-semibold text-white drop-shadow-md backdrop-blur-sm">
+                          {t("catalog.transcriptStats", { words: collection.wordCount })}
+                        </span>
+                      </div>
                     </div>
                   </Link>
-                  <div className="flex items-center justify-between border-t px-4 py-2">
-                    <span className="text-xs text-muted-foreground">{collection.favoriteCount}</span>
+                  <div className="flex items-center gap-3 px-4 pt-3">
+                    <Link href={`/collections/${collection.id}`} className="min-w-0 flex-1 truncate font-semibold" title={collection.title}>
+                      <h2 className="truncate">{collection.title}</h2>
+                    </Link>
                     <CollectionFavoriteButton collectionId={collection.id} compact />
                   </div>
+                  <CollectionPhrasePreview title={collection.title} phrases={collection.previewPhrases} />
                 </li>
               ))}
             </ul>

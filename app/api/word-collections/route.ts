@@ -45,8 +45,34 @@ export async function GET(request: Request) {
       console.error("[api/word-collections] Could not list public collections", { code: publicError.code });
       return NextResponse.json({ code: "COLLECTIONS_FAILED" }, { status: 500 });
     }
+    const publicCollections = data ?? [];
+    const publicCollectionIds = publicCollections.map((collection) => collection.id);
+    const { data: previewItems, error: previewError } = publicCollectionIds.length > 0
+      ? await db.from("collection_items").select("collection_id,video_id,line_text").in("collection_id", publicCollectionIds).order("created_at", { ascending: true })
+      : { data: [], error: null };
+    if (previewError) {
+      console.error("[api/word-collections] Could not load collection previews", { code: previewError.code });
+      return NextResponse.json({ code: "COLLECTIONS_FAILED" }, { status: 500 });
+    }
+    const previewVideoIds = new Map<string, string[]>();
+    const previewPhrases = new Map<string, string[]>();
+    const wordCountByCollection = new Map<string, number>();
+    for (const item of previewItems ?? []) {
+      const phrases = previewPhrases.get(item.collection_id) ?? [];
+      if (phrases.length < 3 && item.line_text.trim()) {
+        phrases.push(item.line_text.trim());
+        previewPhrases.set(item.collection_id, phrases);
+      }
+      const videos = previewVideoIds.get(item.collection_id) ?? [];
+      if (videos.length < 1 && item.video_id && !videos.includes(item.video_id)) {
+        videos.push(item.video_id);
+        previewVideoIds.set(item.collection_id, videos);
+      }
+      const wordCount = item.line_text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
+      wordCountByCollection.set(item.collection_id, (wordCountByCollection.get(item.collection_id) ?? 0) + wordCount);
+    }
     return NextResponse.json({
-      collections: (data ?? []).map((collection) => ({
+      collections: publicCollections.map((collection) => ({
         id: collection.id,
         title: collection.title,
         isPublic: collection.is_public,
@@ -54,6 +80,9 @@ export async function GET(request: Request) {
         sourceLanguage: collection.source_language,
         itemCount: Number(collection.item_count),
         favoriteCount: Number(collection.favorite_count),
+        previewVideoIds: previewVideoIds.get(collection.id) ?? [],
+        previewPhrases: previewPhrases.get(collection.id) ?? [],
+        wordCount: wordCountByCollection.get(collection.id) ?? 0,
       })),
     }, { headers: { "Cache-Control": "private, no-store" } });
   }

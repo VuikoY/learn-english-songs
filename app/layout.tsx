@@ -20,8 +20,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LingoClips — изучай языки по песням",
-  description: "Изучай английский по песням: тексты, объяснения и игра со словами.",
+  title: "LingoMix — language learning with phrases and media",
+  description: "Practice languages with phrases from songs, videos, and collections.",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

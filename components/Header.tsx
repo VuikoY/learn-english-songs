@@ -10,15 +10,16 @@ import AuthLink from "@/components/AuthLink";
 import GlobalSearch from "@/components/GlobalSearch";
 import { buttonVariants } from "@/components/ui/button";
 import { useLanguage } from "@/context/LanguageContext";
-import { BookMarked, Shuffle } from "lucide-react";
+import { BookMarked, Clapperboard, Shuffle } from "lucide-react";
 
 export default function Header() {
   const { t } = useLanguage();
   return (
     <header className="relative z-50 border-b border-border bg-card/85 shadow-sm backdrop-blur-sm">
       <div className="mx-auto grid max-w-7xl grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:h-14 sm:py-0">
-        <Link href="/" className="font-semibold tracking-tight">
-          LingoClips
+        <Link href="/" className="inline-flex items-center gap-1.5 font-semibold tracking-tight">
+          <Shuffle className="size-4" aria-hidden="true" />
+          LingoMix
         </Link>
 
         <nav className="order-2 col-start-2 row-start-1 flex shrink-0 items-center justify-end gap-2 sm:order-2 sm:ml-auto sm:gap-4">
@@ -27,9 +28,9 @@ export default function Header() {
             <BookMarked className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">{t("nav.collections")}</span>
           </Link>
-          <Link href="/phrase-mix" aria-label={t("nav.phraseMix")} title={t("nav.phraseMix")} className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
-            <Shuffle className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">{t("nav.phraseMix")}</span>
+          <Link href="/media" aria-label={t("nav.media")} title={t("nav.media")} className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
+            <Clapperboard className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{t("nav.media")}</span>
           </Link>
           <FavoritesNavLink />
           <AuthLink />

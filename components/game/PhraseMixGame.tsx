@@ -515,7 +515,7 @@ export default function PhraseMixGame() {
               ? <a className="min-w-0 truncate text-zinc-100 underline-offset-4 hover:underline" href={phrase.sourceType === "collection" ? `/collections/${encodeURIComponent(phrase.sourceSlug)}` : `/song/${encodeURIComponent(phrase.sourceSlug)}`} target="_blank" rel="noopener">{phrase.sourceTitle}</a>
               : <span className="min-w-0 truncate text-zinc-100">{phrase.sourceTitle}</span>}
           </div>
-          <PhraseMixFavoriteButton sourceType={phrase.sourceType} sourceId={phrase.sourceType === "media" ? phrase.songId : phrase.sourceSlug} initialFavorite={phrase.isFavorite} />
+          <PhraseMixFavoriteButton key={`${phrase.sourceType}:${phrase.sourceType === "media" ? phrase.songId : phrase.sourceSlug}:${phrase.isFavorite}`} sourceType={phrase.sourceType} sourceId={phrase.sourceType === "media" ? phrase.songId : phrase.sourceSlug} initialFavorite={phrase.isFavorite} />
         </> : <span className="text-muted-foreground">&nbsp;</span>}
       </div>
       {videoPlayer}

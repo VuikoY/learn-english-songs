@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Heart } from "lucide-react";
 import SongCard from "@/components/SongCard";
 import CollectionFavoriteButton from "@/components/CollectionFavoriteButton";
+import CollectionPhrasePreview from "@/components/CollectionPhrasePreview";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -17,7 +19,7 @@ const GUEST_FAVORITES_KEY = "lingo-clips:favorites:v1";
 const GUEST_COLLECTION_FAVORITES_KEY = "lingo-clips:collection-favorites:v1";
 const FAVORITES_CHANGED = "lingo-clips:favorites-changed";
 
-type FavoriteCollection = { id: string; title: string; itemCount: number };
+type FavoriteCollection = { id: string; title: string; wordCount: number; previewVideoIds: string[]; previewPhrases: string[] };
 type FavoritesTab = "all" | "media" | "collections";
 
 function readGuestIds(key: string): string[] {
@@ -104,19 +106,34 @@ export default function FavoritesPage() {
       if (collectionError) throw collectionError;
       const visibleCollectionIds = (collectionRows ?? []).map((collection) => collection.id);
       const { data: itemRows, error: itemError } = visibleCollectionIds.length > 0
-        ? await db.from("collection_items").select("collection_id")
-          .in("collection_id", visibleCollectionIds)
+        ? await db.from("collection_items").select("collection_id,video_id,line_text")
+          .in("collection_id", visibleCollectionIds).order("created_at", { ascending: true })
         : { data: [], error: null };
       if (itemError) throw itemError;
-      const itemCounts = new Map<string, number>();
+      const wordCounts = new Map<string, number>();
+      const previewVideoIds = new Map<string, string[]>();
+      const previewPhrases = new Map<string, string[]>();
       for (const item of itemRows ?? []) {
-        itemCounts.set(item.collection_id, (itemCounts.get(item.collection_id) ?? 0) + 1);
+        const phrases = previewPhrases.get(item.collection_id) ?? [];
+        if (phrases.length < 3 && item.line_text.trim()) {
+          phrases.push(item.line_text.trim());
+          previewPhrases.set(item.collection_id, phrases);
+        }
+        const wordCount = item.line_text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
+        wordCounts.set(item.collection_id, (wordCounts.get(item.collection_id) ?? 0) + wordCount);
+        const videos = previewVideoIds.get(item.collection_id) ?? [];
+        if (videos.length < 1 && item.video_id && !videos.includes(item.video_id)) {
+          videos.push(item.video_id);
+          previewVideoIds.set(item.collection_id, videos);
+        }
       }
       if (requestId !== refreshIdRef.current) return;
       setCollections((collectionRows ?? []).map((collection) => ({
         id: collection.id,
         title: collection.title,
-        itemCount: itemCounts.get(collection.id) ?? 0,
+        wordCount: wordCounts.get(collection.id) ?? 0,
+        previewVideoIds: previewVideoIds.get(collection.id) ?? [],
+        previewPhrases: previewPhrases.get(collection.id) ?? [],
       })));
     } catch (error) {
       console.error("[favorites] Could not load language-filtered favorites.", {
@@ -172,16 +189,24 @@ export default function FavoritesPage() {
         {visibleCollections.map((collection) => (
           <article key={collection.id} className="overflow-hidden rounded-xl border bg-card shadow-sm">
             <Link href={`/collections/${collection.id}`} className="block">
-              <div className="flex aspect-video items-center justify-center bg-muted text-4xl text-muted-foreground" aria-hidden="true">▶</div>
-              <div className="space-y-2 p-4">
-                <span className="inline-flex rounded-full border px-2 py-1 text-xs text-muted-foreground">{t("favorites.collectionBadge")}</span>
-                <h2 className="break-words font-semibold">{collection.title}</h2>
-                <p className="text-sm text-muted-foreground">{t("collections.phraseCount", { count: collection.itemCount })}</p>
+              <div className="relative flex aspect-[2/1] overflow-hidden bg-muted">
+                {collection.previewVideoIds.length > 0 ? (
+                  <Image src={`https://i.ytimg.com/vi/${collection.previewVideoIds[0]}/mqdefault.jpg`} alt="" width={320} height={180} unoptimized className="h-full w-full object-cover" />
+                ) : <div className="w-full" />}
+                <div className="absolute bottom-2.5 right-2.5 flex flex-col items-end gap-1">
+                  <span className="rounded-full bg-black/30 px-2.5 py-1 text-xs font-semibold text-white drop-shadow-md backdrop-blur-sm">
+                    {t("catalog.transcriptStats", { words: collection.wordCount })}
+                  </span>
+                </div>
               </div>
             </Link>
-            <div className="flex justify-end border-t px-3">
+            <div className="flex items-center gap-3 px-4 pt-3">
+              <Link href={`/collections/${collection.id}`} className="min-w-0 flex-1 truncate font-semibold" title={collection.title}>
+                <h2 className="truncate">{collection.title}</h2>
+              </Link>
               <CollectionFavoriteButton collectionId={collection.id} compact />
             </div>
+            <CollectionPhrasePreview title={collection.title} phrases={collection.previewPhrases} />
           </article>
         ))}
       </div>
@@ -189,7 +214,7 @@ export default function FavoritesPage() {
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-10 text-center text-muted-foreground">
         <Heart className="size-8" aria-hidden="true" />
         <p>{t("favorites.empty")}</p>
-        <Link href="/" className="text-primary underline">{t("favorites.browse")}</Link>
+        <Link href="/media" className="text-primary underline">{t("favorites.browse")}</Link>
       </div>
     )}
   </main>;

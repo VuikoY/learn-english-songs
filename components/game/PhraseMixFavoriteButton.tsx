@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Heart, Loader2 } from "lucide-react";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -23,12 +23,6 @@ export default function PhraseMixFavoriteButton({
   const [busy, setBusy] = useState(false);
   const [loginHint, setLoginHint] = useState(false);
   const [error, setError] = useState(false);
-
-  useEffect(() => {
-    setFavorite(initialFavorite);
-    setLoginHint(false);
-    setError(false);
-  }, [initialFavorite, sourceId, sourceType]);
 
   async function toggleFavorite() {
     if (authLoading || busy) return;
