@@ -121,6 +121,7 @@ const ru = {
   "nav.collections": "Коллекции",
   "nav.learningStats": "Статистика обучения",
   "collections.title": "Коллекции",
+  "collections.subtitle": "Осваивайте фразовые глаголы, редукции в связной речи и сложную грамматику на примерах реальных видео.",
   "collections.myCollections": "Мои коллекции",
   "collections.loading": "Загрузка коллекций…",
   "collections.empty": "Коллекций пока нет. Создайте первую.",
@@ -473,6 +474,7 @@ const en: Dictionary = {
   "nav.collections": "Collections",
   "nav.learningStats": "Learning statistics",
   "collections.title": "Collections",
+  "collections.subtitle": "Master specific phrasal verbs, connected speech reductions, and tricky grammar in real video context.",
   "collections.myCollections": "My collections",
   "collections.loading": "Loading collections…",
   "collections.empty": "You don’t have any collections yet. Create your first one.",
@@ -822,6 +824,7 @@ const pl: Dictionary = {
   "nav.collections": "Kolekcje",
   "nav.learningStats": "Statystyki nauki",
   "collections.title": "Kolekcje",
+  "collections.subtitle": "Opanuj wybrane czasowniki frazowe, redukcje w mowie łączonej i podchwytliwą gramatykę w kontekście prawdziwych nagrań wideo.",
   "collections.myCollections": "Moje kolekcje",
   "collections.loading": "Wczytywanie kolekcji…",
   "collections.empty": "Nie masz jeszcze kolekcji. Utwórz pierwszą.",
@@ -1171,6 +1174,7 @@ const es: Dictionary = {
   "nav.collections": "Colecciones",
   "nav.learningStats": "Estadísticas de aprendizaje",
   "collections.title": "Colecciones",
+  "collections.subtitle": "Domina verbos frasales específicos, reducciones del habla conectada y gramática complicada en el contexto de vídeos reales.",
   "collections.myCollections": "Mis colecciones",
   "collections.loading": "Cargando colecciones…",
   "collections.empty": "Aún no tienes colecciones. Crea la primera.",
@@ -1511,6 +1515,7 @@ const uk: Dictionary = {
   "dashboard.leaderboard": "Таблиця лідерів", "dashboard.leaderboardRank": "Місце", "dashboard.leaderboardLearner": "Учень", "dashboard.leaderboardLoading": "Завантаження таблиці лідерів…", "dashboard.leaderboardEmpty": "Поки немає результатів для таблиці лідерів.", "dashboard.leaderboardError": "Не вдалося завантажити таблицю лідерів.",
   "dashboard.splitLongLines": "Розділити довгі рядки",
   "dashboard.addLine": "Додати рядок",
+  "collections.subtitle": "Вивчайте фразові дієслова, скорочення у зв’язному мовленні та складну граматику на прикладах реальних відео.",
 };
 
 export const DICTIONARY: Record<Language, Dictionary> = { ru, uk, en, pl, es };

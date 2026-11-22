@@ -78,7 +78,7 @@ export default function CollectionsPage() {
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
       <h1 className="text-3xl font-bold">{t("collections.title")}</h1>
       <p className="-mt-4 text-muted-foreground">
-        Master specific phrasal verbs, connected speech reductions, and tricky grammar in real video context.
+        {t("collections.subtitle")}
       </p>
       {authLoading ? (
         <p role="status" className="text-muted-foreground">{t("collections.loading")}</p>

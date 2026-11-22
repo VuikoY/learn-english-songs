@@ -181,10 +181,7 @@ export default function FavoritesPage() {
     ) : hasVisibleFavorites ? (
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {visibleSongs.map((song) => (
-          <article key={song.id} className="space-y-2">
-            <span className="inline-flex rounded-full border px-2 py-1 text-xs text-muted-foreground">{t("favorites.mediaBadge")}</span>
-            <SongCard song={song} labels={labels} />
-          </article>
+          <SongCard key={song.id} song={song} labels={labels} />
         ))}
         {visibleCollections.map((collection) => (
           <article key={collection.id} className="overflow-hidden rounded-xl border bg-card shadow-sm">
