@@ -73,9 +73,6 @@ type Props = {
   learningActivitySource?: LearningActivitySource;
 };
 
-// Minimum number of words required for a line to be playable.
-const MIN_WORDS_PER_LINE = 3;
-
 function maskWordPreservingApostrophes(word: string): string {
   return Array.from(word, (character) =>
     /['’]/u.test(character) ? character : "\u2022",
@@ -118,7 +115,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     () =>
       lines
         .map((line, index) => ({ line, index }))
-        .filter(({ line }) => countHideableWords(line.text) >= MIN_WORDS_PER_LINE),
+        .filter(({ line }) => countHideableWords(line.text) >= 1),
     [lines],
   );
   const totalHiddenWords = useMemo(
@@ -469,6 +466,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   }, [onPlayLine, playable, position, startRound]);
   const replayCurrentLine = useCallback(() => {
     if (!currentLine || !onPlayLine) return;
+    pauseRequestedRoundRef.current = null;
     onPlayLine(currentLine.start, round?.lineIndex ?? position);
   }, [currentLine, onPlayLine, position, round?.lineIndex]);
 

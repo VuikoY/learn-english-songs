@@ -81,11 +81,12 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   // The YouTube IFrame API has no time-changed event, so poll getCurrentTime while playing.
   useEffect(() => {
     if (!isPlaying) return;
-
-    const intervalId = setInterval(async () => {
+    const intervalId = setInterval(() => {
       const player = playerRef.current;
       if (!player) return;
-      const time = await player.getCurrentTime();
+      // The YouTube IFrame API returns getCurrentTime synchronously. Avoid
+      // yielding between reading the clock and checking the line boundary.
+      const time = player.getCurrentTime();
       const rangeEnd = rangeEndRef.current;
       if (rangeEnd !== null && time >= rangeEnd) {
         rangeEndRef.current = null;
