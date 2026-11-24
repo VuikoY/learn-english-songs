@@ -22,7 +22,7 @@ type Snippet = {
   start: number;
   duration: number;
   text: string;
-  source: "db" | "youtube";
+  source: "collection" | "db" | "youtube";
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,6 +109,38 @@ export async function GET(request: Request) {
   if (!db) return NextResponse.json({ code: "SERVICE_UNAVAILABLE" }, { status: 503 });
 
   const matcher = makeMatcher(phrase);
+  const existingVideoIds = new Set<string>(excludedVideoIds);
+  const { data: collectionItems, error: collectionItemsError } = await db
+    .from("collection_items")
+    .select("video_id,video_title,line_text,start_time,end_time")
+    .eq("source_language", language)
+    .ilike("line_text", `%${phrase.replace(/[\\%_]/gu, "\\$&")}%`)
+    .not("video_id", "is", null)
+    .not("video_title", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1_000);
+  if (collectionItemsError) {
+    console.error("[api/snippet-search] Collection phrase lookup failed", { code: collectionItemsError.code });
+    return NextResponse.json({ code: "SNIPPET_SEARCH_FAILED" }, { status: 500 });
+  }
+
+  const collectionSnippets: Snippet[] = [];
+  for (const item of collectionItems ?? []) {
+    if (!item.video_id || !item.video_title || !matcher.test(item.line_text) ||
+      !Number.isFinite(item.start_time) || !Number.isFinite(item.end_time) ||
+      item.start_time < 0 || item.end_time <= item.start_time || existingVideoIds.has(item.video_id)) continue;
+    existingVideoIds.add(item.video_id);
+    collectionSnippets.push({
+      video_id: item.video_id,
+      title: item.video_title,
+      start: Number(item.start_time.toFixed(1)),
+      duration: Math.max(0.1, Number((item.end_time - item.start_time).toFixed(1))),
+      text: item.line_text,
+      source: "collection",
+    });
+    if (collectionSnippets.length >= requestedLimit) break;
+  }
+
   const { data: songRows, error: songError } = await db
     .from("songs")
     .select("id,youtube_id,title,transcripts!inner(lines_json)")
@@ -120,7 +152,6 @@ export async function GET(request: Request) {
   }
 
   const dbSnippets: Snippet[] = [];
-  const existingVideoIds = new Set<string>(excludedVideoIds);
   for (const song of songRows ?? []) {
     if (!song.youtube_id || !song.title) continue;
     const transcripts: unknown = song.transcripts;
@@ -131,11 +162,11 @@ export async function GET(request: Request) {
       existingVideoIds.add(song.youtube_id);
       dbSnippets.push(matches[0]);
     }
-    if (dbSnippets.length >= requestedLimit) break;
+    if (collectionSnippets.length + dbSnippets.length >= requestedLimit) break;
   }
 
-  if (dbSnippets.length >= requestedLimit) {
-    return NextResponse.json({ snippets: dbSnippets.slice(0, requestedLimit) }, {
+  if (collectionSnippets.length + dbSnippets.length >= requestedLimit) {
+    return NextResponse.json({ snippets: [...collectionSnippets, ...dbSnippets].slice(0, requestedLimit) }, {
       headers: { "Cache-Control": "private, no-store" },
     });
   }
@@ -171,14 +202,14 @@ export async function GET(request: Request) {
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
       return NextResponse.json({
-        snippets: dbSnippets,
+        snippets: [...collectionSnippets, ...dbSnippets],
         warning: "YOUTUBE_SEARCH_FAILED",
       }, { headers: { "Cache-Control": "private, no-store" } });
     }
   }
   if (candidates.length === 0 && youtubeSearchFailed && !process.env.YOUTUBE_DATA_API_KEY) {
     return NextResponse.json({
-      snippets: dbSnippets,
+      snippets: [...collectionSnippets, ...dbSnippets],
       warning: "YOUTUBE_SEARCH_FAILED",
     }, { headers: { "Cache-Control": "private, no-store" } });
   }
@@ -191,8 +222,8 @@ export async function GET(request: Request) {
 
   const candidatesToCheck = candidates.slice(0, isAdditionalSearch ? ADDITIONAL_VIDEO_SEARCH_LIMIT : VIDEO_SEARCH_LIMIT);
   const youtubeSnippets: Snippet[] = [];
-  const matchedVideoIds = new Set(dbSnippets.map((snippet) => snippet.video_id));
-  for (let offset = 0; offset < candidatesToCheck.length && dbSnippets.length + youtubeSnippets.length < requestedLimit; offset += TRANSCRIPT_BATCH_SIZE) {
+  const matchedVideoIds = new Set([...collectionSnippets, ...dbSnippets].map((snippet) => snippet.video_id));
+  for (let offset = 0; offset < candidatesToCheck.length && collectionSnippets.length + dbSnippets.length + youtubeSnippets.length < requestedLimit; offset += TRANSCRIPT_BATCH_SIZE) {
     const batch = candidatesToCheck.slice(offset, offset + TRANSCRIPT_BATCH_SIZE);
     const attempts = await Promise.allSettled(batch.map(async ({ videoId, title }) => {
       const controller = new AbortController();
@@ -250,6 +281,6 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({
-    snippets: snippets.slice(0, requestedLimit),
+    snippets: [...collectionSnippets, ...snippets].slice(0, requestedLimit),
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

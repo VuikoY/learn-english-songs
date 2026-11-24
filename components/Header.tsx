@@ -24,13 +24,13 @@ export default function Header() {
 
         <nav className="order-2 col-start-2 row-start-1 flex shrink-0 items-center justify-end gap-2 sm:order-2 sm:ml-auto sm:gap-4">
           <LanguageSwitcher />
-          <Link href="/collections" aria-label={t("nav.collections")} title={t("nav.collections")} className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
-            <BookMarked className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">{t("nav.collections")}</span>
-          </Link>
           <Link href="/media" aria-label={t("nav.media")} title={t("nav.media")} className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
             <Clapperboard className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">{t("nav.media")}</span>
+          </Link>
+          <Link href="/collections" aria-label={t("nav.collections")} title={t("nav.collections")} className={buttonVariants({ variant: "ghost", size: "sm", className: "gap-1.5" })}>
+            <BookMarked className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{t("nav.collections")}</span>
           </Link>
           <FavoritesNavLink />
           <AuthLink />

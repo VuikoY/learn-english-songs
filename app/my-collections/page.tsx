@@ -36,7 +36,7 @@ type DraftSnippet = {
   start: number;
   duration: number;
   text: string;
-  source: "db" | "youtube";
+  source: "collection" | "db" | "youtube";
 };
 
 const SNIPPET_BATCH_SIZE = 5;
@@ -84,7 +84,7 @@ function isDraftSnippet(value: unknown): value is Omit<DraftSnippet, "id"> {
     "start" in value && typeof value.start === "number" &&
     "duration" in value && typeof value.duration === "number" &&
     "text" in value && typeof value.text === "string" &&
-    "source" in value && (value.source === "db" || value.source === "youtube");
+    "source" in value && (value.source === "collection" || value.source === "db" || value.source === "youtube");
 }
 
 export default function MyCollectionsPage() {
