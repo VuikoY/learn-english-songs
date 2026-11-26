@@ -12,8 +12,7 @@ import { isLearningLanguage } from "@/types/game";
 
 export const maxDuration = 30;
 
-const TRANSCRIPT_CHECK_TIMEOUT_MS = 4_000;
-const MAX_TRANSCRIPT_RESULTS = 5;
+const TRANSCRIPT_CHECK_TIMEOUT_MS = 10_000;
 
 type YouTubeVideo = {
   videoId: string;
@@ -153,11 +152,11 @@ export async function POST(request: Request) {
   const transcriptChecks = await Promise.allSettled(
     videos.map((video) => checkTranscript(video.videoId, language)),
   );
-  const matchingVideos = videos.flatMap((video, index): YouTubeVideo[] => {
+  const checkedVideos = videos.map((video, index): YouTubeVideo => {
     const result = transcriptChecks[index];
     video.transcriptAvailable = result?.status === "fulfilled" ? result.value : null;
-    return video.transcriptAvailable === true ? [video] : [];
+    return video;
   });
 
-  return NextResponse.json({ videos: matchingVideos.slice(0, MAX_TRANSCRIPT_RESULTS) });
+  return NextResponse.json({ videos: checkedVideos });
 }

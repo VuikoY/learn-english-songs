@@ -17,7 +17,6 @@ import type { LyricLine } from "@/lib/types";
 import { isLearningLanguage } from "@/types/game";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { findLrclibTrack, LrclibProviderError, parseLrcLyrics } from "@/lib/lrclib";
 
 function logTranscriptDatabaseError(operation: string, error: { code?: string; status?: number }) {
   const code = error.code ?? "unknown";
@@ -38,17 +37,12 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const videoId = params.get("videoId");
   const lang = params.get("lang") ?? "en";
-  const title = params.get("title")?.trim() ?? "";
-  const artist = params.get("artist")?.trim() ?? "";
 
   if (!videoId || !isValidVideoId(videoId)) {
     return NextResponse.json({ error: "Invalid video ID." }, { status: 400 });
   }
   if (!isLearningLanguage(lang)) {
     return NextResponse.json({ error: "Unsupported song language." }, { status: 400 });
-  }
-  if (title.length > 200 || artist.length > 200) {
-    return NextResponse.json({ error: "Invalid song title or artist." }, { status: 400 });
   }
 
   try {
@@ -100,29 +94,21 @@ export async function GET(request: Request) {
       if (cached && Array.isArray(cached.lines_json)) return NextResponse.json(cached.lines_json);
     }
 
-    if (title) {
-      try {
-        const track = await findLrclibTrack(title, artist);
-        const lines = track?.syncedLyrics ? parseLrcLyrics(track.syncedLyrics) : [];
-        if (lines.length > 0) return NextResponse.json(lines);
-      } catch (error) {
-        console.error("[transcript] Lrclib lookup failed; falling back to YouTube subtitles.", {
-          errorType: error instanceof Error ? error.name : "UnknownError",
-          upstreamStatus: error instanceof LrclibProviderError ? error.status : null,
-        });
-      }
-    }
-
     let items: Awaited<ReturnType<typeof fetchYoutubeTranscript>>;
     try {
       items = await fetchYoutubeTranscript(videoId, {
         lang,
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(10_000),
       });
     } catch (error) {
+      const diagnostics = {
+        error: error instanceof Error ? error.message : String(error),
+        hasProxy: Boolean(process.env.YT_PROXY_URL),
+        proxyUrlPrefix: process.env.YT_PROXY_URL?.slice(0, 30),
+      };
       if (error instanceof YoutubeTranscriptTooManyRequestError) {
         console.error("[transcript] YouTube requested a CAPTCHA for transcript retrieval");
-        return NextResponse.json({ error: "Transcript provider quota exceeded. Please try again later." }, { status: 429 });
+        return NextResponse.json(diagnostics, { status: 429 });
       }
       if (
         error instanceof YoutubeTranscriptDisabledError ||
@@ -130,14 +116,14 @@ export async function GET(request: Request) {
         error instanceof YoutubeTranscriptNotAvailableLanguageError ||
         error instanceof YoutubeTranscriptVideoUnavailableError
       ) {
-        return NextResponse.json({ error: "No subtitles are available for this video and language." }, { status: 404 });
+        return NextResponse.json(diagnostics, { status: 404 });
       }
       const timedOut = error instanceof Error && error.name === "TimeoutError";
       console.error("[transcript] YouTube transcript request failed", {
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
       return NextResponse.json(
-        { error: timedOut ? "The transcript provider timed out." : "Could not reach the transcript provider." },
+        diagnostics,
         { status: timedOut ? 504 : 502 },
       );
     }
@@ -177,7 +163,7 @@ export async function GET(request: Request) {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
     return NextResponse.json(
-      { error: "Could not retrieve subtitles from the transcript provider." },
+      { error: error instanceof Error ? error.message : String(error), hasProxy: Boolean(process.env.YT_PROXY_URL), proxyUrlPrefix: process.env.YT_PROXY_URL?.slice(0, 30) },
       { status: 502 },
     );
   }

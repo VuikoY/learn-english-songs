@@ -8,15 +8,13 @@ import { PAGE_TEXT } from "@/lib/i18n/pages";
 import type { LyricLine } from "@/lib/types";
 import { TranscriptTimingEditor } from "@/components/TranscriptTimingEditor";
 import { extractVideoId, stripYoutubeUrlExtras } from "@/lib/youtube";
-import { Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { SONG_DIFFICULTIES, SONG_GENRES, songMetadataLabels, type SongDifficulty, type SongGenre } from "@/lib/songMetadata";
 import { CONTENT_TYPES, type ContentType } from "@/components/SongCatalog";
 import SongSearch from "@/components/SongSearch";
-import { alignPlainLyrics } from "@/lib/lrclib";
 
 type SongTranscript = { lines_json: LyricLine[] };
 type Song = { id: string; youtube_id: string; title: string; artist: string | null; is_public: boolean; genre: SongGenre; difficulty: SongDifficulty; content_type: ContentType; transcripts?: SongTranscript | SongTranscript[] | null };
-type LyricsSyncResult = { kind: "synced" } | { kind: "plain"; lines: LyricLine[] } | { kind: "notFound" | "providerError" | "alignmentError" | "saveError" };
 const contentTypeLabel = (type: ContentType, t: ReturnType<typeof useLanguage>["t"]) => ({ music_video: t("favorites.music"), movie_clip: t("favorites.movieClips"), interview: t("favorites.interviews"), podcast: t("favorites.podcasts"), shorts: t("favorites.shorts"), other: t("favorites.other") })[type];
 
 function isLyricLines(value: unknown): value is LyricLine[] {
@@ -97,34 +95,10 @@ export default function DashboardPage() {
       const songArtist = typeof metadata === "object" && metadata !== null && "author_name" in metadata && typeof metadata.author_name === "string"
         ? metadata.author_name
         : "";
-      let lyricLines: LyricLine[] | null = null;
-      if (songTitle) {
-        try {
-          const lookup = await fetch(`/api/lrclib?title=${encodeURIComponent(songTitle)}`);
-          if (lookup.ok) {
-            const result: unknown = await lookup.json();
-            if (
-              typeof result === "object" && result !== null && "kind" in result &&
-              result.kind === "synced" && "lines" in result && isLyricLines(result.lines)
-            ) {
-              lyricLines = result.lines;
-            }
-          } else if (lookup.status !== 404) {
-            console.error("[dashboard] Lrclib lookup failed; falling back to YouTube subtitles.", lookup.status);
-          }
-        } catch (error) {
-          console.error("[dashboard] Lrclib lookup failed; falling back to YouTube subtitles.", {
-            errorType: error instanceof Error ? error.name : "UnknownError",
-          });
-        }
-      }
-
-      if (!lyricLines) {
-        const transcript = await fetch(`/api/transcript?videoId=${videoId}&lang=${sourceLanguage}`);
-        const lyricData: unknown = await transcript.json();
-        if (!transcript.ok || !isLyricLines(lyricData)) throw new Error(text.subtitlesUnavailable);
-        lyricLines = lyricData;
-      }
+      const transcript = await fetch(`/api/transcript?videoId=${videoId}&lang=${sourceLanguage}`);
+      const lyricData: unknown = await transcript.json();
+      if (!transcript.ok || !isLyricLines(lyricData)) throw new Error(text.subtitlesUnavailable);
+      const lyricLines = lyricData;
       setLines(lyricLines); setTitle(songTitle); setArtist(songArtist);
       setMessage(text.subtitlesReady);
     } catch (error) { setMessage(error instanceof Error ? error.message : text.loadError); }
@@ -169,32 +143,6 @@ export default function DashboardPage() {
     return true;
   }
 
-  async function syncSongLyrics(song: Song, currentLines: LyricLine[]): Promise<LyricsSyncResult> {
-    try {
-      const response = await fetch(`/api/lrclib?title=${encodeURIComponent(song.title)}`);
-      if (response.status === 404) return { kind: "notFound" };
-      if (!response.ok) return { kind: "providerError" };
-
-      const result: unknown = await response.json();
-      if (typeof result !== "object" || result === null || !("kind" in result)) return { kind: "providerError" };
-      if (result.kind === "synced" && "lines" in result && isLyricLines(result.lines)) {
-        const saved = await saveSong(song, result.lines, song.genre, song.difficulty, song.content_type, song.artist ?? "");
-        return saved ? { kind: "synced" } : { kind: "saveError" };
-      }
-      if (result.kind === "plain" && "plainLyrics" in result && typeof result.plainLyrics === "string") {
-        const aligned = alignPlainLyrics(currentLines, result.plainLyrics);
-        if (!aligned || aligned.confidence < 0.35) return { kind: "alignmentError" };
-        return { kind: "plain", lines: aligned.lines };
-      }
-      return { kind: "notFound" };
-    } catch (error) {
-      console.error("[dashboard] Could not update lyrics from Lrclib.", {
-        errorType: error instanceof Error ? error.name : "UnknownError",
-      });
-      return { kind: "providerError" };
-    }
-  }
-
   if (loading) return <main className="mx-auto max-w-5xl p-8">{text.loading}</main>;
   if (!userId) return <main className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10"><SongSearch onSelectVideoUrl={selectVideoUrl} /><section><h1 className="text-2xl font-bold">{text.mySongs}</h1><p className="mt-3">{text.loginPrompt}</p><Link className="mt-3 inline-block text-primary underline" href="/auth">{text.login}</Link></section></main>;
 
@@ -209,15 +157,15 @@ export default function DashboardPage() {
       {lines.length>0&&<div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm"><span>{text.songTitle}</span><input className="rounded border bg-background px-3 py-2" value={title} onChange={event=>setTitle(event.target.value)}/></label><label className="grid gap-1 text-sm"><span>{t("search.artist")}</span><input maxLength={200} className="rounded border bg-background px-3 py-2" value={artist} onChange={event=>setArtist(event.target.value)}/></label></div>}
       {message&&<p role="status" className="text-sm text-muted-foreground">{message}</p>}
     </div></section>
-    <section><h2 className="mb-4 text-2xl font-semibold">{text.savedSongs}</h2>{songs.length===0?<p className="text-muted-foreground">{text.emptySongs}</p>:<div className="space-y-3">{songs.map(song=><SongEditor key={song.id} song={song} onSave={saveSong} onDelete={deleteSong} onSync={syncSongLyrics} text={text} uiLanguage={uiLanguage}/>)}</div>}</section>
+    <section><h2 className="mb-4 text-2xl font-semibold">{text.savedSongs}</h2>{songs.length===0?<p className="text-muted-foreground">{text.emptySongs}</p>:<div className="space-y-3">{songs.map(song=><SongEditor key={song.id} song={song} onSave={saveSong} onDelete={deleteSong} text={text} uiLanguage={uiLanguage}/>)}</div>}</section>
   </main>;
 }
 
-function SongEditor({ song, onSave, onDelete, onSync, text, uiLanguage }: { song: Song; onSave: (song: Song, lines: LyricLine[], genre: SongGenre, difficulty: SongDifficulty, contentType: ContentType, artist: string) => Promise<boolean>; onDelete: (songId: string) => Promise<boolean>; onSync: (song: Song, lines: LyricLine[]) => Promise<LyricsSyncResult>; text: (typeof PAGE_TEXT)["ru"]; uiLanguage: keyof typeof PAGE_TEXT }) {
+function SongEditor({ song, onSave, onDelete, text, uiLanguage }: { song: Song; onSave: (song: Song, lines: LyricLine[], genre: SongGenre, difficulty: SongDifficulty, contentType: ContentType, artist: string) => Promise<boolean>; onDelete: (songId: string) => Promise<boolean>; text: (typeof PAGE_TEXT)["ru"]; uiLanguage: keyof typeof PAGE_TEXT }) {
   const { t } = useLanguage();
   const transcript = Array.isArray(song.transcripts) ? song.transcripts[0] : song.transcripts;
   const [lines,setLines]=useState(transcript?.lines_json??[]); const [isPublic,setIsPublic]=useState(song.is_public); const [open,setOpen]=useState(false); const [saving,setSaving]=useState(false);
-  const [syncing,setSyncing]=useState(false); const [deleting,setDeleting]=useState(false); const [syncMessage,setSyncMessage]=useState("");
+  const [deleting,setDeleting]=useState(false); const [editorMessage,setEditorMessage]=useState("");
   const [genre,setGenre]=useState(song.genre); const [difficulty,setDifficulty]=useState(song.difficulty); const [contentType,setContentType]=useState(song.content_type); const labels=songMetadataLabels(uiLanguage);
   const [artist,setArtist]=useState(song.artist ?? "");
   useEffect(() => { queueMicrotask(() => setLines(transcript?.lines_json ?? [])); }, [song.id, transcript]);
@@ -227,46 +175,22 @@ function SongEditor({ song, onSave, onDelete, onSync, text, uiLanguage }: { song
     setSaving(true);
     try {
       const saved = await onSave({ ...song, is_public: isPublic }, lines, genre, difficulty, contentType, artist);
-      if (saved) setSyncMessage("");
+      if (saved) setEditorMessage("");
     }
     finally { setSaving(false); }
   }
   async function handleDelete() {
-    if (saving || syncing || deleting) return;
+    if (saving || deleting) return;
     const confirmed = window.confirm(text.deleteMediaConfirm.replace("{title}", song.title));
     if (!confirmed) return;
-    setDeleting(true); setSyncMessage("");
+    setDeleting(true); setEditorMessage("");
     try {
       const deleted = await onDelete(song.id);
       if (deleted) setOpen(false);
-      else setSyncMessage(text.deleteMediaError);
+      else setEditorMessage(text.deleteMediaError);
     } finally {
       setDeleting(false);
     }
   }
-  async function handleSync() {
-    if (saving || syncing) return;
-    setSyncing(true); setSyncMessage("");
-    try {
-      const result = await onSync(song, lines);
-      if (result.kind === "plain") {
-        setLines(result.lines);
-        setOpen(true);
-        setSyncMessage(t("lyrics.syncPreview"));
-      } else if (result.kind === "synced") {
-        setSyncMessage(t("lyrics.syncSaved"));
-      } else if (result.kind === "notFound") {
-        setSyncMessage(t("lyrics.syncNotFound"));
-      } else if (result.kind === "alignmentError") {
-        setSyncMessage(t("lyrics.syncAlignmentError"));
-      } else if (result.kind === "saveError") {
-        setSyncMessage(t("lyrics.syncSaveError"));
-      } else {
-        setSyncMessage(t("lyrics.syncProviderError"));
-      }
-    } finally {
-      setSyncing(false);
-    }
-  }
-  return <details open={open} className="rounded-lg border p-4" onToggle={event=>setOpen(event.currentTarget.open)}><summary className="cursor-pointer font-medium">{song.title} <span className="text-sm text-muted-foreground">({isPublic?text.public:text.private})</span></summary><div className="mt-3 space-y-3"><div className="flex flex-wrap items-center gap-3"><Link className="text-sm text-primary underline" href={`/song/${song.youtube_id}`}>{text.openTrainer}</Link><button type="button" disabled={saving||syncing} aria-label={t("lyrics.sync")} title={t("lyrics.sync")} className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSync()}>{syncing?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<RefreshCw className="size-4" aria-hidden="true"/>}{syncing?t("lyrics.syncing"):t("lyrics.sync")}</button><button type="button" disabled={saving||syncing||deleting} aria-label={text.deleteMedia} title={text.deleteMedia} className="inline-flex items-center gap-2 rounded border border-destructive/60 px-3 py-2 text-sm text-destructive disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleDelete()}>{deleting?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<Trash2 className="size-4" aria-hidden="true"/>}{deleting?text.deleting:text.deleteMedia}</button><label className="flex items-center gap-2 whitespace-nowrap text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{t("favorites.category")}</span><select className="h-9 rounded border bg-background px-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.genre}</span><select className="h-9 max-w-52 rounded border bg-background px-2" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{labels.genres[item]}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.difficulty}</span><select className="h-9 rounded border bg-background px-2" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{labels.difficulties[item]}</option>)}</select></label></div><label className="grid max-w-xl gap-1 text-sm"><span>{t("search.artist")}</span><input maxLength={200} className="h-10 rounded border bg-background px-3" value={artist} onChange={event=>setArtist(event.target.value)}/></label>{syncMessage&&<p role="status" className="text-sm text-muted-foreground">{syncMessage}</p>}{open&&<TranscriptTimingEditor videoId={song.youtube_id} lines={lines} onLinesChange={setLines}/>}<button disabled={saving||syncing} className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSave()}>{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.saveChanges}</button></div></details>;
+  return <details open={open} className="rounded-lg border p-4" onToggle={event=>setOpen(event.currentTarget.open)}><summary className="cursor-pointer font-medium">{song.title} <span className="text-sm text-muted-foreground">({isPublic?text.public:text.private})</span></summary><div className="mt-3 space-y-3"><div className="flex flex-wrap items-center gap-3"><Link className="text-sm text-primary underline" href={`/song/${song.youtube_id}`}>{text.openTrainer}</Link><button type="button" disabled={saving||deleting} aria-label={text.deleteMedia} title={text.deleteMedia} className="inline-flex items-center gap-2 rounded border border-destructive/60 px-3 py-2 text-sm text-destructive disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleDelete()}>{deleting?<Loader2 className="size-4 animate-spin" aria-hidden="true"/>:<Trash2 className="size-4" aria-hidden="true"/>}{deleting?text.deleting:text.deleteMedia}</button><label className="flex items-center gap-2 whitespace-nowrap text-sm"><input type="checkbox" checked={isPublic} onChange={event=>setIsPublic(event.target.checked)}/> {text.publicSong}</label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{t("favorites.category")}</span><select className="h-9 rounded border bg-background px-2" value={contentType} onChange={event=>setContentType(event.target.value as ContentType)}>{CONTENT_TYPES.map(type=><option key={type} value={type}>{contentTypeLabel(type,t)}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.genre}</span><select className="h-9 max-w-52 rounded border bg-background px-2" value={genre} onChange={event=>setGenre(event.target.value as SongGenre)}>{SONG_GENRES.map((item)=><option key={item} value={item}>{labels.genres[item]}</option>)}</select></label><label className="flex items-center gap-2 whitespace-nowrap text-sm"><span>{labels.difficulty}</span><select className="h-9 rounded border bg-background px-2" value={difficulty} onChange={event=>setDifficulty(event.target.value as SongDifficulty)}>{SONG_DIFFICULTIES.map((item)=><option key={item} value={item}>{labels.difficulties[item]}</option>)}</select></label></div><label className="grid max-w-xl gap-1 text-sm"><span>{t("search.artist")}</span><input maxLength={200} className="h-10 rounded border bg-background px-3" value={artist} onChange={event=>setArtist(event.target.value)}/></label>{editorMessage&&<p role="status" className="text-sm text-muted-foreground">{editorMessage}</p>}{open&&<TranscriptTimingEditor videoId={song.youtube_id} lines={lines} onLinesChange={setLines}/>}<button disabled={saving} className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60" onClick={()=>void handleSave()}>{saving&&<Loader2 className="size-4 animate-spin" aria-hidden="true"/>}{saving?t("common.saving"):text.saveChanges}</button></div></details>;
 }
