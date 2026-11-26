@@ -13,7 +13,6 @@ import { isLearningLanguage } from "@/types/game";
 export const maxDuration = 30;
 
 const TRANSCRIPT_CHECK_TIMEOUT_MS = 4_000;
-const TRANSCRIPT_CHECK_BATCH_SIZE = 5;
 const MAX_TRANSCRIPT_RESULTS = 5;
 
 type YouTubeVideo = {
@@ -151,17 +150,14 @@ export async function POST(request: Request) {
     }];
   });
 
-  const matchingVideos: YouTubeVideo[] = [];
-  for (let index = 0; index < videos.length && matchingVideos.length < MAX_TRANSCRIPT_RESULTS; index += TRANSCRIPT_CHECK_BATCH_SIZE) {
-    const batch = videos.slice(index, index + TRANSCRIPT_CHECK_BATCH_SIZE);
-    const availability = await Promise.all(
-      batch.map((video) => checkTranscript(video.videoId, language)),
-    );
-    batch.forEach((video, batchIndex) => {
-      video.transcriptAvailable = availability[batchIndex];
-      if (video.transcriptAvailable === true) matchingVideos.push(video);
-    });
-  }
+  const transcriptChecks = await Promise.allSettled(
+    videos.map((video) => checkTranscript(video.videoId, language)),
+  );
+  const matchingVideos = videos.flatMap((video, index): YouTubeVideo[] => {
+    const result = transcriptChecks[index];
+    video.transcriptAvailable = result?.status === "fulfilled" ? result.value : null;
+    return video.transcriptAvailable === true ? [video] : [];
+  });
 
   return NextResponse.json({ videos: matchingVideos.slice(0, MAX_TRANSCRIPT_RESULTS) });
 }

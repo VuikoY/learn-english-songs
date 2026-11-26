@@ -10,6 +10,7 @@ type FetchTranscriptOptions = {
 /** Fetch subtitles, optionally routing only youtube.com requests through the configured proxy. */
 export function fetchYoutubeTranscript(videoId: string, options: FetchTranscriptOptions = {}) {
   const proxyUrl = process.env.YT_PROXY_URL;
+  console.log("[YT_PROXY]", Boolean(process.env.YT_PROXY_URL));
 
   return YoutubeTranscript.fetchTranscript(videoId, {
     lang: options.lang,
