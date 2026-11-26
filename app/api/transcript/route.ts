@@ -4,13 +4,13 @@
 
 import { NextResponse } from "next/server";
 import {
-  YoutubeTranscript,
   YoutubeTranscriptDisabledError,
   YoutubeTranscriptNotAvailableError,
   YoutubeTranscriptNotAvailableLanguageError,
   YoutubeTranscriptTooManyRequestError,
   YoutubeTranscriptVideoUnavailableError,
 } from "youtube-transcript";
+import { fetchYoutubeTranscript } from "@/lib/youtubeTranscript";
 import { cleanTranscript } from "@/lib/utils/cleanTranscript";
 import { isValidVideoId } from "@/lib/youtube";
 import type { LyricLine } from "@/lib/types";
@@ -113,14 +113,11 @@ export async function GET(request: Request) {
       }
     }
 
-    let items: Awaited<ReturnType<typeof YoutubeTranscript.fetchTranscript>>;
+    let items: Awaited<ReturnType<typeof fetchYoutubeTranscript>>;
     try {
-      items = await YoutubeTranscript.fetchTranscript(videoId, {
+      items = await fetchYoutubeTranscript(videoId, {
         lang,
-        fetch: (input, init) => fetch(input, {
-          ...init,
-          signal: AbortSignal.timeout(15_000),
-        }),
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (error) {
       if (error instanceof YoutubeTranscriptTooManyRequestError) {

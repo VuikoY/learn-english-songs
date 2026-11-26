@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import YouTube from "youtube-sr";
-import { YoutubeTranscript } from "youtube-transcript";
+import { fetchYoutubeTranscript } from "@/lib/youtubeTranscript";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cleanTranscript } from "@/lib/utils/cleanTranscript";
 import { isValidVideoId } from "@/lib/youtube";
@@ -236,9 +236,9 @@ export async function GET(request: Request) {
       });
       try {
         const transcript = await Promise.race([
-          YoutubeTranscript.fetchTranscript(videoId, {
+          fetchYoutubeTranscript(videoId, {
             lang: language,
-            fetch: (input, init) => fetch(input, { ...init, signal: controller.signal }),
+            signal: controller.signal,
           }),
           timeout,
         ]);

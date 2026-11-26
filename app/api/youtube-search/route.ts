@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  YoutubeTranscript,
   YoutubeTranscriptDisabledError,
   YoutubeTranscriptNotAvailableError,
   YoutubeTranscriptNotAvailableLanguageError,
@@ -8,6 +7,7 @@ import {
   YoutubeTranscriptVideoUnavailableError,
 } from "youtube-transcript";
 import { isValidVideoId } from "@/lib/youtube";
+import { fetchYoutubeTranscript } from "@/lib/youtubeTranscript";
 import { isLearningLanguage } from "@/types/game";
 
 export const maxDuration = 30;
@@ -30,9 +30,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 async function checkTranscript(videoId: string, language: string): Promise<boolean | null> {
   try {
-    const lines = await YoutubeTranscript.fetchTranscript(videoId, {
+    const lines = await fetchYoutubeTranscript(videoId, {
       lang: language,
-      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(TRANSCRIPT_CHECK_TIMEOUT_MS) }),
+      signal: AbortSignal.timeout(TRANSCRIPT_CHECK_TIMEOUT_MS),
     });
     return Array.isArray(lines) && lines.length > 0;
   } catch (error) {

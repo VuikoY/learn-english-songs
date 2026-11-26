@@ -47,6 +47,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   const playerRef = useRef<YTPlayer | null>(null);
   const rangeEndRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playerError, setPlayerError] = useState<number | null>(null);
 
   // Expose play, pause, seekTo, and volume controls to the parent component.
   useImperativeHandle(
@@ -105,8 +106,13 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   // Save the player instance after it loads.
   const handleReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
-    event.target.getIframe().setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    setPlayerError(null);
     onReady?.();
+  };
+
+  const handleError = (event: YouTubeEvent<number>) => {
+    console.error("[YouTubePlayer] YouTube player error", { videoId, code: event.data });
+    setPlayerError(event.data);
   };
 
   // Handle player state changes such as play, pause, buffering, and end.
@@ -123,7 +129,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
 
   return (
     // Keep a 16:9 aspect ratio at every width.
-    <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
+    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
       <YouTube
         videoId={videoId}
         className="h-full w-full"
@@ -134,11 +140,20 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
           playerVars: {
             rel: 0, // Do not show related videos from other channels.
             playsinline: 1, // Keep playback inline on iOS.
+            origin: typeof window !== "undefined" ? window.location.origin : undefined,
           },
         }}
         onReady={handleReady}
         onStateChange={handleStateChange}
+        onError={handleError}
       />
+      {playerError !== null && (
+        <p role="alert" className="absolute inset-x-0 bottom-0 bg-black/90 px-4 py-3 text-sm text-white">
+          {playerError === 150 || playerError === 101
+            ? `YouTube error ${playerError}: this video cannot be embedded. Please replace its video ID.`
+            : `YouTube could not play this video (error ${playerError}). Please try another video.`}
+        </p>
+      )}
     </div>
   );
 });

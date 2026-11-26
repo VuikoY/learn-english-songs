@@ -134,8 +134,12 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
 
   function handleReady(event: YouTubeEvent) {
     playerRef.current = event.target;
-    event.target.getIframe().setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
     loadSnippet(event.target);
+  }
+
+  function handlePlayerError(event: YouTubeEvent<number>) {
+    console.error("[SnippetPlayer] YouTube player error", { videoId, code: event.data });
+    onErrorRef.current();
   }
 
   function handleStateChange(event: YouTubeEvent<number>) {
@@ -153,6 +157,7 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
       disablekb: 1,
       playsinline: 1,
       rel: 0,
+      origin: typeof window !== "undefined" ? window.location.origin : undefined,
     },
   };
 
@@ -164,7 +169,7 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
         opts={opts}
         onReady={handleReady}
         onStateChange={handleStateChange}
-        onError={onError}
+        onError={handlePlayerError}
       />
     </div>
   );
