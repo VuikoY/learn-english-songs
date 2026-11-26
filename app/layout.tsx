@@ -22,6 +22,14 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "LingoMix — language learning with phrases and media",
   description: "Practice languages with phrases from songs, videos, and collections.",
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

@@ -22,6 +22,8 @@ type YouTubeVideo = {
   transcriptAvailable: boolean | null;
 };
 
+type SearchCandidate = YouTubeVideo & { reliableSource: boolean };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -124,7 +126,7 @@ export async function POST(request: Request) {
   }
 
   const items = isRecord(payload) && Array.isArray(payload.items) ? payload.items : [];
-  const videos: YouTubeVideo[] = items.flatMap((item): YouTubeVideo[] => {
+  const candidates: SearchCandidate[] = items.flatMap((item): SearchCandidate[] => {
     if (!isRecord(item) || !isRecord(item.id) || !isRecord(item.snippet)) return [];
     const videoId = item.id.videoId;
     const snippet = item.snippet;
@@ -146,8 +148,70 @@ export async function POST(request: Request) {
       channelTitle: snippet.channelTitle,
       thumbnailUrl: typeof thumbnail === "string" ? thumbnail : null,
       transcriptAvailable: null,
+      reliableSource: snippet.channelTitle.endsWith(" - Topic") || /\b(?:Official Audio|Lyrics)\b/i.test(snippet.title),
     }];
   });
+
+  if (candidates.length === 0) return NextResponse.json({ videos: [] });
+
+  const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+  detailsUrl.search = new URLSearchParams({
+    part: "status,contentDetails,snippet",
+    id: candidates.map((video) => video.videoId).join(","),
+    key: apiKey,
+  }).toString();
+
+  let detailsResponse: Response;
+  try {
+    detailsResponse = await fetch(detailsUrl, { signal: AbortSignal.timeout(10_000) });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    console.error("[youtube-search] YouTube video details request failed", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
+    return NextResponse.json(
+      { code: timedOut ? "SEARCH_TIMEOUT" : "SEARCH_FAILED" },
+      { status: timedOut ? 504 : 502 },
+    );
+  }
+
+  let detailsPayload: unknown;
+  try {
+    detailsPayload = await detailsResponse.json();
+  } catch {
+    console.error("[youtube-search] YouTube video details returned invalid JSON", { status: detailsResponse.status });
+    return NextResponse.json({ code: "SEARCH_FAILED" }, { status: 502 });
+  }
+
+  if (!detailsResponse.ok) {
+    const error = isRecord(detailsPayload) && isRecord(detailsPayload.error) ? detailsPayload.error : null;
+    const errors = error && Array.isArray(error.errors) ? error.errors : [];
+    const quotaExceeded = errors.some((item) => isRecord(item) && item.reason === "quotaExceeded");
+    console.error("[youtube-search] YouTube video details request rejected", {
+      status: detailsResponse.status,
+      quotaExceeded,
+    });
+    return NextResponse.json(
+      { code: quotaExceeded ? "QUOTA_EXCEEDED" : "SEARCH_FAILED" },
+      { status: quotaExceeded ? 429 : 502 },
+    );
+  }
+
+  const details = isRecord(detailsPayload) && Array.isArray(detailsPayload.items) ? detailsPayload.items : [];
+  const embeddableIds = new Set(details.flatMap((item): string[] => {
+    if (!isRecord(item) || typeof item.id !== "string" || !isRecord(item.status)) return [];
+    if (item.status.embeddable !== true || item.status.privacyStatus !== "public") return [];
+    const contentDetails = isRecord(item.contentDetails) ? item.contentDetails : null;
+    const restriction = contentDetails && isRecord(contentDetails.regionRestriction) ? contentDetails.regionRestriction : null;
+    const blocked = restriction && Array.isArray(restriction.blocked) ? restriction.blocked : [];
+    if (["PL", "UA", "US", "GB"].some((country) => blocked.includes(country))) return [];
+    return [item.id];
+  }));
+
+  const videos = candidates
+    .filter((video) => embeddableIds.has(video.videoId))
+    .sort((a, b) => Number(b.reliableSource) - Number(a.reliableSource))
+    .map(({ reliableSource: _reliableSource, ...video }) => video);
 
   const transcriptChecks = await Promise.allSettled(
     videos.map((video) => checkTranscript(video.videoId, language)),

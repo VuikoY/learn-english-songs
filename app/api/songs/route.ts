@@ -70,7 +70,7 @@ export async function PATCH(request: Request) {
   if (!db) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   const { data: { user } } = await db.auth.getUser();
   if (!user || user.is_anonymous) return NextResponse.json({ code: "SIGN_IN_REQUIRED" }, { status: 401 });
-  const body = await request.json().catch(() => null) as { intent?: unknown; id?: unknown; lines?: unknown; isPublic?: unknown; genre?: unknown; difficulty?: unknown; contentType?: unknown; artist?: unknown } | null;
+  const body = await request.json().catch(() => null) as { intent?: unknown; id?: unknown; lines?: unknown; isPublic?: unknown; genre?: unknown; difficulty?: unknown; contentType?: unknown; artist?: unknown; videoId?: unknown } | null;
   if (body?.intent === "transcript") {
     if (typeof body.id !== "string" || !Array.isArray(body.lines) || !body.lines.length || body.lines.length > 5000 || body.lines.some((line) => !isTranscriptLine(line))) {
       return NextResponse.json({ code: "INVALID_LINE" }, { status: 400 });
@@ -93,7 +93,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ saved: true, lines: body.lines });
   }
   if (!body || typeof body.id !== "string" || !Array.isArray(body.lines) || body.lines.some((x) => !x || typeof x.text !== "string" || typeof x.start !== "number" || typeof x.duration !== "number")) return NextResponse.json({ error: "Invalid subtitle data." }, { status: 400 });
-  const metadataUpdate: { genre?: string; difficulty?: string; content_type?: string; artist?: string | null } = {};
+  let newVideoId: string | undefined;
+  if (body.videoId !== undefined) {
+    const parsedVideoId = typeof body.videoId === "string" ? extractVideoId(body.videoId) : null;
+    if (!parsedVideoId) {
+      return NextResponse.json({ error: "Invalid YouTube video ID or URL." }, { status: 400 });
+    }
+    newVideoId = parsedVideoId;
+  }
+  const metadataUpdate: { genre?: string; difficulty?: string; content_type?: string; artist?: string | null; youtube_id?: string; thumbnail_url?: string } = {};
   if (body.artist !== undefined) {
     if (typeof body.artist !== "string" || body.artist.trim().length > 200) return NextResponse.json({ code: "INVALID_ARTIST" }, { status: 400 });
     metadataUpdate.artist = body.artist.trim() || null;
@@ -110,10 +118,30 @@ export async function PATCH(request: Request) {
     if (!isContentType(body.contentType)) return NextResponse.json({ error: "Invalid content category." }, { status: 400 });
     metadataUpdate.content_type = body.contentType;
   }
+  if (newVideoId) {
+    metadataUpdate.youtube_id = newVideoId;
+    metadataUpdate.thumbnail_url = `https://i.ytimg.com/vi/${newVideoId}/hqdefault.jpg`;
+  }
+  const { data: previousSong, error: previousSongError } = await db.from("songs").select("youtube_id").eq("id", body.id).eq("created_by", user.id).maybeSingle();
+  if (previousSongError || !previousSong) {
+    if (previousSongError) logDatabaseError("song update lookup", previousSongError);
+    return NextResponse.json({ error: "Song not found or access denied." }, { status: 404 });
+  }
   const { data: song, error } = await db.from("songs").update({ is_public: body.isPublic !== false, ...metadataUpdate }).eq("id", body.id).eq("created_by", user.id).select("id,youtube_id,language").maybeSingle();
   if (error || !song) {
     if (error) logDatabaseError("song update", error);
+    if (error?.code === "23505") return NextResponse.json({ error: "A song with this YouTube video ID already exists." }, { status: 409 });
     return NextResponse.json({ error: "Song not found or access denied." }, { status: 404 });
+  }
+  const videoChanged = newVideoId !== undefined && previousSong.youtube_id !== newVideoId;
+  if (videoChanged) {
+    // Keep the existing subtitle text and timing intact; only associate it with the selected video.
+    const { error: transcriptLinkError } = await db.from("transcripts").update({ video_id: song.youtube_id }).eq("song_id", song.id);
+    if (transcriptLinkError) {
+      logDatabaseError("transcript video link update", transcriptLinkError);
+      return NextResponse.json({ error: "The video was changed, but its subtitle link could not be updated." }, { status: 500 });
+    }
+    return NextResponse.json({ saved: true, youtubeId: song.youtube_id });
   }
   const { error: transcriptError } = await db.from("transcripts").upsert({ song_id: song.id, video_id: song.youtube_id, language: song.language, lines_json: body.lines, is_verified: false, verified: false }, { onConflict: "song_id" });
   if (transcriptError) {

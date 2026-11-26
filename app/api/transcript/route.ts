@@ -103,8 +103,6 @@ export async function GET(request: Request) {
     } catch (error) {
       const diagnostics = {
         error: error instanceof Error ? error.message : String(error),
-        hasProxy: Boolean(process.env.YT_PROXY_URL),
-        proxyUrlPrefix: process.env.YT_PROXY_URL?.slice(0, 30),
       };
       if (error instanceof YoutubeTranscriptTooManyRequestError) {
         console.error("[transcript] YouTube requested a CAPTCHA for transcript retrieval");
@@ -163,7 +161,7 @@ export async function GET(request: Request) {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error), hasProxy: Boolean(process.env.YT_PROXY_URL), proxyUrlPrefix: process.env.YT_PROXY_URL?.slice(0, 30) },
+      { error: error instanceof Error ? error.message : String(error) },
       { status: 502 },
     );
   }
