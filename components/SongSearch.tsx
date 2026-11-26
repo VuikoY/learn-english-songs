@@ -24,7 +24,9 @@ function isSearchVideo(value: unknown): value is SearchVideo {
     typeof video.title === "string" &&
     typeof video.channelTitle === "string" &&
     (video.thumbnailUrl === null || typeof video.thumbnailUrl === "string") &&
-    video.transcriptAvailable === true;
+    (video.transcriptAvailable === true ||
+      video.transcriptAvailable === false ||
+      video.transcriptAvailable === null);
 }
 
 function isSearchResponse(value: unknown): value is SearchResponse {
@@ -98,7 +100,7 @@ export default function SongSearch({ onSelectVideoUrl }: { onSelectVideoUrl: (ur
         throw new Error(t(errorKey));
       }
       if ("code" in payload) throw new Error(t("search.error.failed"));
-      setVideos(payload.videos.filter((video) => video.transcriptAvailable === true));
+      setVideos(payload.videos);
       setHasSearched(true);
     } catch (searchError) {
       if (searchError instanceof Error && searchError.name === "AbortError") return;
@@ -161,7 +163,13 @@ export default function SongSearch({ onSelectVideoUrl }: { onSelectVideoUrl: (ur
               <div className="flex min-w-0 flex-1 flex-col items-start">
                 <h3 className="max-w-full truncate font-semibold" title={video.title}>{cleanYouTubeTitle(video.title)}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{video.channelTitle}</p>
-                <p className="mt-3 text-sm text-green-700 dark:text-green-400">{t("search.transcriptAvailable")}</p>
+                <p className={`mt-3 text-sm ${video.transcriptAvailable === true ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}`}>
+                  {video.transcriptAvailable === true
+                    ? t("search.transcriptAvailable")
+                    : video.transcriptAvailable === false
+                      ? t("search.transcriptUnavailable")
+                      : t("search.transcriptUnknown")}
+                </p>
                 <div className="mt-auto flex flex-wrap gap-3 pt-4">
                   <Link href={`/song/${video.videoId}?${lyricsSearchParams.toString()}`} className={buttonVariants({ size: "sm" })}>{t("search.study")}</Link>
                   <button
