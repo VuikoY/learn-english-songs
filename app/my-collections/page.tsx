@@ -10,6 +10,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import SnippetPlayer from "@/components/SnippetPlayer";
 import CollectionSnippetRow, { type EditableCollectionSnippet } from "@/components/CollectionSnippetRow";
 import CollectionFavoriteButton from "@/components/CollectionFavoriteButton";
+import CollectionProgressBadge from "@/components/CollectionProgressBadge";
 
 type Collection = {
   id: string;
@@ -737,6 +738,7 @@ export default function MyCollectionsPage() {
                     <summary className="flex min-h-[50px] cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden">
                       <span className="size-0 border-y-[4px] border-l-[5px] border-y-transparent border-l-current text-muted-foreground transition-transform group-open:rotate-90" aria-hidden="true" />
                       <span className="min-w-0 flex-1 break-words font-medium">{collection.title}</span>
+                      <CollectionProgressBadge collectionId={collection.id} compact />
                       <span className="shrink-0 text-xs text-muted-foreground">{t("collections.phraseCount", { count: collection.itemCount })}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">({t(collection.isPublic ? "collections.publicBadge" : "collections.privateBadge")})</span>
                     </summary>

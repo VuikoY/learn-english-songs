@@ -14,6 +14,7 @@ export async function POST(request: Request) {
 
   const input = await request.json().catch(() => null) as {
     mediaId?: unknown;
+    collectionId?: unknown;
     difficulty?: unknown;
     accuracy?: unknown;
     wordsCompleted?: unknown;
@@ -23,8 +24,10 @@ export async function POST(request: Request) {
 
   if (
     !input ||
-    typeof input.mediaId !== "string" ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.mediaId) ||
+    !(
+      (typeof input.mediaId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.mediaId) && input.collectionId === undefined) ||
+      (typeof input.collectionId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.collectionId) && input.mediaId === undefined)
+    ) ||
     typeof input.difficulty !== "string" ||
     !DIFFICULTIES.includes(input.difficulty as typeof DIFFICULTIES[number]) ||
     typeof input.accuracy !== "number" ||
@@ -45,13 +48,12 @@ export async function POST(request: Request) {
   const difficulty = input.difficulty as typeof DIFFICULTIES[number];
   const accuracy = input.accuracy;
   const completed = accuracy >= 80;
-  const { data: previous, error: lookupError } = await db
-    .from("user_media_progress")
-    .select("accuracy,words_completed,total_words,mistakes_count,is_completed,completed_at")
-    .eq("user_id", user.id)
-    .eq("media_id", input.mediaId)
-    .eq("difficulty", difficulty)
-    .maybeSingle();
+  const collectionId = typeof input.collectionId === "string" ? input.collectionId : null;
+  const lookup = collectionId
+    ? await db.from("user_collection_progress").select("accuracy,words_completed,total_words,mistakes_count,is_completed,completed_at").eq("user_id", user.id).eq("collection_id", collectionId).eq("difficulty", difficulty).maybeSingle()
+    : await db.from("user_media_progress").select("accuracy,words_completed,total_words,mistakes_count,is_completed,completed_at").eq("user_id", user.id).eq("media_id", input.mediaId as string).eq("difficulty", difficulty).maybeSingle();
+  const previous = lookup.data;
+  const lookupError = lookup.error;
   if (lookupError) {
     console.error("[api/media-progress] Progress lookup failed", lookupError);
     return NextResponse.json({ error: "PROGRESS_SAVE_FAILED" }, { status: 500 });
@@ -59,9 +61,8 @@ export async function POST(request: Request) {
 
   const useCurrentAttempt = !previous || accuracy >= previous.accuracy;
   const isCompleted = completed || previous?.is_completed === true;
-  const { error: saveError } = await db.from("user_media_progress").upsert({
+  const progressValues = {
     user_id: user.id,
-    media_id: input.mediaId,
     difficulty,
     accuracy: useCurrentAttempt ? accuracy : previous.accuracy,
     words_completed: useCurrentAttempt ? input.wordsCompleted as number : previous.words_completed,
@@ -69,7 +70,11 @@ export async function POST(request: Request) {
     mistakes_count: useCurrentAttempt ? input.mistakesCount as number : previous.mistakes_count,
     is_completed: isCompleted,
     completed_at: previous?.completed_at ?? (completed ? new Date().toISOString() : null),
-  }, { onConflict: "user_id,media_id,difficulty" });
+  };
+  const saveResult = collectionId
+    ? await db.from("user_collection_progress").upsert({ ...progressValues, collection_id: collectionId }, { onConflict: "user_id,collection_id,difficulty" })
+    : await db.from("user_media_progress").upsert({ ...progressValues, media_id: input.mediaId as string }, { onConflict: "user_id,media_id,difficulty" });
+  const saveError = saveResult.error;
 
   if (saveError) {
     console.error("[api/media-progress] Progress save failed", saveError);

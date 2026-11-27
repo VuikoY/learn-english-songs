@@ -51,6 +51,7 @@ type Props = {
   youtubeId?: string;
   getLineYoutubeId?: (lineIndex: number) => string | undefined;
   songId?: string | null;
+  collectionId?: string | null;
   canEdit?: boolean;
   getLineEditContext?: (lineIndex: number) => TranscriptEditContext | undefined;
   onEditPlayLine?: (seconds: number, lineIndex: number, duration: number) => void;
@@ -79,7 +80,7 @@ function maskWordPreservingApostrophes(word: string): string {
   ).join("");
 }
 
-export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active, learningActivitySource }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, collectionId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active, learningActivitySource }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const { incrementWordsToday } = useDailyWordCounter();
   const activitySource = learningActivitySource ?? (songId ? "media" : "collection");
@@ -364,13 +365,13 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       await Promise.resolve();
       setProgressStatus("saving");
       let saveError: "error" | "sign-in" | null = null;
-      if (songId) {
+      if (songId || collectionId) {
         try {
           const response = await fetch("/api/media-progress", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              mediaId: songId,
+              ...(songId ? { mediaId: songId } : { collectionId }),
               difficulty: `${settings.difficulty[0].toUpperCase()}${settings.difficulty.slice(1)}`,
               accuracy,
               wordsCompleted: completedWords,
@@ -381,6 +382,8 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
           const result = await response.json().catch(() => null) as { error?: unknown } | null;
           if (!response.ok) {
             saveError = result?.error === "AUTH_REQUIRED" ? "sign-in" : "error";
+          } else if (collectionId) {
+            window.dispatchEvent(new CustomEvent("collection-progress-saved", { detail: { collectionId } }));
           }
         } catch {
           saveError = "error";
@@ -400,9 +403,9 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
         }
       }
 
-      setProgressStatus(saveError ?? (songId || completedWords > 0 ? "saved" : "idle"));
+      setProgressStatus(saveError ?? (songId || collectionId || completedWords > 0 ? "saved" : "idle"));
     })();
-  }, [accuracy, activitySource, completedWords, game.mistakes, phase, settings.difficulty, songId, totalHiddenWords]);
+  }, [accuracy, activitySource, collectionId, completedWords, game.mistakes, phase, settings.difficulty, songId, totalHiddenWords]);
 
   // ---------- Round controls ----------
 
@@ -524,7 +527,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     } else if (count === 2) {
       replayCurrentLine();
     }
-    if (count < 3) return;
+    if (count < 2) return;
 
     dispatch({ type: "wrong" });
     dispatch({ type: "revealed", wordKey });
@@ -720,9 +723,9 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
         <span className="shrink-0">✍️ {t("game.words")}: <strong className="tabular-nums">{completedWords} / {totalHiddenWords}</strong></span>
       </div>
       {nextBlank && (
-        <div role="img" className="flex justify-end" aria-label={t("game.mistakesRemaining", { count: 3 - activeWordMistakes })}>
+        <div role="img" className="flex justify-end" aria-label={t("game.mistakesRemaining", { count: 2 - activeWordMistakes })}>
           <span className="flex gap-1" aria-hidden="true">
-            {[0, 1, 2].map((index) => (
+            {[0, 1].map((index) => (
               <span key={index} className={`size-2 rounded-full ${index < activeWordMistakes ? "bg-red-500" : "bg-neutral-400/40"}`} />
             ))}
           </span>

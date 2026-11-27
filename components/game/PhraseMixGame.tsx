@@ -312,7 +312,7 @@ export default function PhraseMixGame() {
     } else if (mistakeCount === 2) {
       replayPhrase();
     }
-    if (mistakeCount < 3) return;
+    if (mistakeCount < 2) return;
 
     setConsecutiveMistakes(0);
     const filledIds = [...round.filledIds, nextBlank.id];

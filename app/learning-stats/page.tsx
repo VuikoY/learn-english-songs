@@ -9,7 +9,7 @@ import { PAGE_TEXT } from "@/lib/i18n/pages";
 import { Crown } from "lucide-react";
 import type { Language } from "@/types/game";
 
-type LearningStats = { completedMedia: number; hardCompleted: number; wordsCompleted: number; averageAccuracy: number };
+type LearningStats = { completedItems: number; hardCompletedItems: number; wordsCompleted: number; averageAccuracy: number };
 type LeaderboardEntry = { pseudonym: string; words_covered: number; average_accuracy: number; completed_media: number };
 type ActivityPeriod = "7d" | "30d" | "all";
 type DailyActivity = { date: string; wordsCount: number };
@@ -83,27 +83,41 @@ export default function LearningStatsPage() {
     }
     if (!userId) return;
 
-    const [progress, leaderboardResult, wordTotals] = await Promise.all([
+    const [progress, collectionProgress, leaderboardResult, wordTotals] = await Promise.all([
       db.from("user_media_progress")
         .select("media_id,difficulty,accuracy,words_completed,is_completed")
+        .eq("user_id", userId),
+      db.from("user_collection_progress")
+        .select("collection_id,difficulty,accuracy,is_completed")
         .eq("user_id", userId),
       db.rpc("get_learning_leaderboard"),
       db.rpc("get_learning_word_totals"),
     ]);
 
-    if (progress.error || wordTotals.error) {
-      console.error("[learning-stats] Could not load learning statistics.", progress.error?.code ?? wordTotals.error?.code);
+    if (progress.error || collectionProgress.error || wordTotals.error) {
+      console.error("[learning-stats] Could not load learning statistics.", progress.error?.code ?? collectionProgress.error?.code ?? wordTotals.error?.code);
       setLearningStats(null);
       setLearningStatsError(true);
     } else {
       const progressRows = progress.data ?? [];
-      const completedRows = progressRows.filter((row) => row.is_completed);
+      const collectionRows = collectionProgress.data ?? [];
+      const allProgressRows = [...progressRows, ...collectionRows];
+      const completedMediaRows = progressRows.filter((row) => row.is_completed);
+      const completedCollectionRows = collectionRows.filter((row) => row.is_completed);
+      const hardMediaRows = completedMediaRows.filter((row) => row.difficulty === "Hard");
+      const hardCollectionRows = completedCollectionRows.filter((row) => row.difficulty === "Hard");
       setLearningStats({
-        completedMedia: new Set(completedRows.map((row) => row.media_id)).size,
-        hardCompleted: new Set(completedRows.filter((row) => row.difficulty === "Hard").map((row) => row.media_id)).size,
+        completedItems: new Set([
+          ...completedMediaRows.map((row) => `media:${row.media_id}`),
+          ...completedCollectionRows.map((row) => `collection:${row.collection_id}`),
+        ]).size,
+        hardCompletedItems: new Set([
+          ...hardMediaRows.map((row) => `media:${row.media_id}`),
+          ...hardCollectionRows.map((row) => `collection:${row.collection_id}`),
+        ]).size,
         wordsCompleted: wordTotals.data?.[0]?.words_covered ?? 0,
-        averageAccuracy: progressRows.length
-          ? Math.round(progressRows.reduce((sum, row) => sum + row.accuracy, 0) / progressRows.length)
+        averageAccuracy: allProgressRows.length
+          ? Math.round(allProgressRows.reduce((sum, row) => sum + row.accuracy, 0) / allProgressRows.length)
           : 0,
       });
       setLearningStatsError(false);
@@ -190,12 +204,12 @@ export default function LearningStatsPage() {
             </div>
             <div className="rounded-xl border bg-card p-5">
               <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-2xl font-semibold tabular-nums">{learningStats?.completedMedia ?? "—"}</span>
-                <span className="text-base font-medium text-muted-foreground">{t("dashboard.completedMedia")}</span>
+                <span className="text-2xl font-semibold tabular-nums">{learningStats?.completedItems ?? "—"}</span>
+                <span className="text-base font-medium text-muted-foreground">{t("dashboard.completedItems")}</span>
               </p>
               <p className="mt-2 flex items-center gap-1.5 text-base font-medium text-amber-500">
                 <Crown className="size-4" aria-hidden="true" />
-                <span className="tabular-nums">{learningStats?.hardCompleted ?? "—"}</span>
+                <span className="tabular-nums">{learningStats?.hardCompletedItems ?? "—"}</span>
                 <span>{t("dashboard.onHard")}</span>
               </p>
             </div>

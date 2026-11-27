@@ -77,6 +77,10 @@ export default function CollectionLearningSession({ items }: Props) {
   const [gameStartRequest, setGameStartRequest] = useState(0);
   const playerRef = useRef<SnippetPlayerHandle>(null);
 
+  useEffect(() => {
+    if (view === "read") setView("play");
+  }, [setView, view]);
+
   const timeline = useMemo(() => createTimeline(sessionItems), [sessionItems]);
   const lines = useMemo(() => timeline.map(({ line }) => line), [timeline]);
   const currentEntry = timeline[position] ?? timeline[0] ?? null;
@@ -239,6 +243,7 @@ export default function CollectionLearningSession({ items }: Props) {
   return (
     <div className="mx-auto mt-3 flex w-full flex-col gap-3 lg:w-[65%]">
       <LearningModeControls
+        hideRead
         view={view}
         gameMode={gameSettings.mode}
         progress={gameProgress}
@@ -287,6 +292,7 @@ export default function CollectionLearningSession({ items }: Props) {
           onQuit={onQuitGame}
           startRequest={gameStartRequest}
           lines={lines}
+          collectionId={currentEntry.item.collectionId}
           currentTime={currentTime}
           getLineYoutubeId={(lineIndex) => timeline[lineIndex]?.item.youtubeId}
           getLineEditContext={getLineEditContext}

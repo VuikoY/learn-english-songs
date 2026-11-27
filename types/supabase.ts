@@ -122,6 +122,11 @@ isOneToOne: false
                       referencedColumns: ["id"]
                     }
                   ]
+                },"user_collection_progress": {
+                  Row: { "accuracy": number,"completed_at": string | null,"collection_id": string,"difficulty": string,"id": string,"is_completed": boolean,"mistakes_count": number,"total_words": number,"user_id": string,"words_completed": number }
+                  Insert: { "accuracy": number,"completed_at"?: string | null,"collection_id": string,"difficulty": string,"id"?: string,"is_completed"?: boolean,"mistakes_count": number,"total_words": number,"user_id": string,"words_completed": number }
+                  Update: { "accuracy"?: number,"completed_at"?: string | null,"collection_id"?: string,"difficulty"?: string,"id"?: string,"is_completed"?: boolean,"mistakes_count"?: number,"total_words"?: number,"user_id"?: string,"words_completed"?: number }
+                  Relationships: [{ foreignKeyName: "user_collection_progress_collection_id_fkey"; columns: ["collection_id"]; isOneToOne: false; referencedRelation: "word_collections"; referencedColumns: ["id"] }]
                 },"user_phrase_mix_records": {
                   Row: { "all_time_best": number,"daily_best": number,"daily_date": string,"updated_at": string,"user_id": string }
                   Insert: { "all_time_best"?: number,"daily_best"?: number,"daily_date"?: string,"updated_at"?: string,"user_id": string }

@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import type { GameSettings } from "@/types/game";
 
 type Props = {
+  hideRead?: boolean;
   view: "read" | "play";
   gameMode: GameSettings["mode"];
   progress: { current: number; total: number };
@@ -13,7 +14,7 @@ type Props = {
   onGameMode: (mode: GameSettings["mode"]) => void;
 };
 
-export default function LearningModeControls({ view, gameMode, progress, readProgress, onRead, onGameMode }: Props) {
+export default function LearningModeControls({ hideRead = false, view, gameMode, progress, readProgress, onRead, onGameMode }: Props) {
   const { t } = useLanguage();
 
   return (
@@ -21,7 +22,7 @@ export default function LearningModeControls({ view, gameMode, progress, readPro
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("game.mode.label")}>
-            <button
+            {!hideRead && <button
               type="button"
               aria-pressed={view === "read"}
               onClick={onRead}
@@ -29,7 +30,7 @@ export default function LearningModeControls({ view, gameMode, progress, readPro
             >
               <ScrollText className="size-4" />
               {t("nav.read")}
-            </button>
+            </button>}
             <button
               type="button"
               aria-pressed={view === "play" && gameMode === "fill-blanks"}
