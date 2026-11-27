@@ -70,7 +70,7 @@ export async function PATCH(request: Request) {
   if (!db) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   const { data: { user } } = await db.auth.getUser();
   if (!user || user.is_anonymous) return NextResponse.json({ code: "SIGN_IN_REQUIRED" }, { status: 401 });
-  const body = await request.json().catch(() => null) as { intent?: unknown; id?: unknown; lines?: unknown; isPublic?: unknown; genre?: unknown; difficulty?: unknown; contentType?: unknown; artist?: unknown; videoId?: unknown } | null;
+  const body = await request.json().catch(() => null) as { intent?: unknown; id?: unknown; lines?: unknown; isPublic?: unknown; genre?: unknown; difficulty?: unknown; contentType?: unknown; artist?: unknown; videoId?: unknown; title?: unknown } | null;
   if (body?.intent === "transcript") {
     if (typeof body.id !== "string" || !Array.isArray(body.lines) || !body.lines.length || body.lines.length > 5000 || body.lines.some((line) => !isTranscriptLine(line))) {
       return NextResponse.json({ code: "INVALID_LINE" }, { status: 400 });
@@ -101,7 +101,13 @@ export async function PATCH(request: Request) {
     }
     newVideoId = parsedVideoId;
   }
-  const metadataUpdate: { genre?: string; difficulty?: string; content_type?: string; artist?: string | null; youtube_id?: string; thumbnail_url?: string } = {};
+  const metadataUpdate: { title?: string; genre?: string; difficulty?: string; content_type?: string; artist?: string | null; youtube_id?: string; thumbnail_url?: string } = {};
+  if (body.title !== undefined) {
+    if (typeof body.title !== "string" || !body.title.trim() || body.title.trim().length > 200) {
+      return NextResponse.json({ code: "INVALID_TITLE" }, { status: 400 });
+    }
+    metadataUpdate.title = body.title.trim();
+  }
   if (body.artist !== undefined) {
     if (typeof body.artist !== "string" || body.artist.trim().length > 200) return NextResponse.json({ code: "INVALID_ARTIST" }, { status: 400 });
     metadataUpdate.artist = body.artist.trim() || null;
