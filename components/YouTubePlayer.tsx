@@ -41,6 +41,42 @@ const STATE_ENDED = 0;
 // Poll the current time every 250 ms, which is sufficient for subtitle updates.
 const POLL_INTERVAL_MS = 250;
 
+function hasAttachedPlayerFrame(player: YTPlayer): boolean {
+  try {
+    const iframe = player.getIframe();
+    return Boolean(iframe?.isConnected && iframe.src);
+  } catch {
+    return false;
+  }
+}
+
+function isMissingPlayerFrameError(error: unknown): boolean {
+  return error instanceof TypeError && /reading .?src|(?:null|undefined).*src/iu.test(error.message);
+}
+
+function runPlayerCommand(player: YTPlayer, command: () => void): boolean {
+  try {
+    if (!hasAttachedPlayerFrame(player)) return false;
+    command();
+    return true;
+  } catch (error) {
+    if (!isMissingPlayerFrameError(error)) throw error;
+    console.warn("[YouTubePlayer] The embedded player frame disappeared before a command completed.");
+    return false;
+  }
+}
+
+function readPlayerValue<T>(player: YTPlayer, read: () => T, fallback: T): T {
+  try {
+    if (!hasAttachedPlayerFrame(player)) return fallback;
+    return read();
+  } catch (error) {
+    if (!isMissingPlayerFrameError(error)) throw error;
+    console.warn("[YouTubePlayer] The embedded player frame disappeared while reading player state.");
+    return fallback;
+  }
+}
+
 const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   { videoId, onReady, onTimeUpdate, onPlayingChange },
   ref,
@@ -59,37 +95,51 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
       play: () => {
         rangeEndRef.current = null;
         rangeFinishedRef.current = null;
-        void playerRef.current?.playVideo();
+        const player = playerRef.current;
+        if (player) runPlayerCommand(player, () => { void player.playVideo(); });
       },
       pause: () => {
         rangeEndRef.current = null;
         rangeFinishedRef.current = null;
-        void playerRef.current?.pauseVideo();
+        const player = playerRef.current;
+        if (player) runPlayerCommand(player, () => { void player.pauseVideo(); });
       },
       seekTo: (seconds: number) => {
         rangeEndRef.current = null;
         rangeFinishedRef.current = null;
-        void playerRef.current?.seekTo(seconds, true);
-        onTimeUpdate?.(seconds); // Update the UI immediately rather than waiting for the next poll.
+        const player = playerRef.current;
+        if (player && runPlayerCommand(player, () => { void player.seekTo(seconds, true); })) {
+          onTimeUpdate?.(seconds); // Update the UI immediately rather than waiting for the next poll.
+        }
       },
       playRange: (startSeconds: number, endSeconds: number) => {
         const player = playerRef.current;
         if (!player || !Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) return;
-        rangeEndRef.current = endSeconds + AUDIO_END_BUFFER_SECONDS;
+        const started = runPlayerCommand(player, () => {
+          void player.seekTo(Math.max(0, startSeconds - AUDIO_START_BUFFER_SECONDS), true);
+          void player.playVideo();
+        });
+        rangeEndRef.current = started ? endSeconds + AUDIO_END_BUFFER_SECONDS : null;
         rangeFinishedRef.current = null;
-        void player.seekTo(Math.max(0, startSeconds - AUDIO_START_BUFFER_SECONDS), true);
-        void player.playVideo();
       },
       playTimedRange: (startSeconds: number, endSeconds: number, onFinished) => {
         const player = playerRef.current;
         if (!player || !Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) return;
-        rangeEndRef.current = endSeconds;
-        rangeFinishedRef.current = onFinished ?? null;
-        void player.seekTo(startSeconds, true);
-        void player.playVideo();
+        const started = runPlayerCommand(player, () => {
+          void player.seekTo(startSeconds, true);
+          void player.playVideo();
+        });
+        rangeEndRef.current = started ? endSeconds : null;
+        rangeFinishedRef.current = started ? onFinished ?? null : null;
       },
-      getVolume: () => playerRef.current?.getVolume() ?? 100,
-      setVolume: (volume: number) => playerRef.current?.setVolume(volume),
+      getVolume: () => {
+        const player = playerRef.current;
+        return player ? readPlayerValue(player, () => player.getVolume(), 100) : 100;
+      },
+      setVolume: (volume: number) => {
+        const player = playerRef.current;
+        if (player) runPlayerCommand(player, () => { void player.setVolume(volume); });
+      },
     }),
     [onTimeUpdate],
   );
@@ -99,17 +149,20 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
     if (!isPlaying) return;
     const intervalId = setInterval(() => {
       const player = playerRef.current;
-      if (!player) return;
+      if (!player || !hasAttachedPlayerFrame(player)) return;
       // The YouTube IFrame API returns getCurrentTime synchronously. Avoid
       // yielding between reading the clock and checking the line boundary.
-      const time = player.getCurrentTime();
+      const time = readPlayerValue(player, () => player.getCurrentTime(), Number.NaN);
+      if (!Number.isFinite(time)) return;
       const rangeEnd = rangeEndRef.current;
       if (rangeEnd !== null && time >= rangeEnd) {
         rangeEndRef.current = null;
         const onFinished = rangeFinishedRef.current;
         rangeFinishedRef.current = null;
-        void player.pauseVideo();
-        void player.seekTo(rangeEnd, true);
+        runPlayerCommand(player, () => {
+          void player.pauseVideo();
+          void player.seekTo(rangeEnd, true);
+        });
         onTimeUpdate?.(rangeEnd);
         onFinished?.();
         return;
@@ -125,7 +178,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   const handleReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
     setPlayerError(null);
-    onReady?.();
+    if (hasAttachedPlayerFrame(event.target)) onReady?.();
   };
 
   const handleError = (event: YouTubeEvent<number>) => {
@@ -144,14 +197,17 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
       const onFinished = rangeFinishedRef.current;
       rangeEndRef.current = null;
       rangeFinishedRef.current = null;
-      void playerRef.current?.seekTo(endTime, true);
+      const player = playerRef.current;
+      if (player) runPlayerCommand(player, () => { void player.seekTo(endTime, true); });
       onTimeUpdate?.(endTime);
       onFinished?.();
     }
 
     // On pause or seek, sync the current time once so the highlighted lyric matches the timeline.
     if (!playing && playerRef.current) {
-      onTimeUpdate?.(await playerRef.current.getCurrentTime());
+      const player = playerRef.current;
+      const time = readPlayerValue(player, () => player.getCurrentTime(), Number.NaN);
+      if (Number.isFinite(time)) onTimeUpdate?.(time);
     }
   };
 
