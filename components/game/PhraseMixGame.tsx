@@ -71,6 +71,22 @@ function maskWord(word: string): string {
   return Array.from(word, (character) => /['’]/u.test(character) ? character : "\u2022").join("");
 }
 
+function createSessionId(): string {
+  const cryptoApi = typeof globalThis.crypto === "undefined" ? undefined : globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export default function PhraseMixGame() {
   const { t, sourceLanguage, targetLanguage, uiLanguage } = useLanguage();
   const { incrementWordsToday } = useDailyWordCounter();
@@ -100,6 +116,7 @@ export default function PhraseMixGame() {
   const [translationExpanded, setTranslationExpanded] = useState(false);
   const [transcriptEditOpen, setTranscriptEditOpen] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [phraseInstanceId, setPhraseInstanceId] = useState(0);
   const [rewardRevealed, setRewardRevealed] = useState(false);
   const [rewardReady, setRewardReady] = useState(false);
   const playerRef = useRef<PlayerHandle>(null);
@@ -114,6 +131,7 @@ export default function PhraseMixGame() {
   const activitySessionIdRef = useRef<string | null>(null);
   const activityWordsCoveredRef = useRef(0);
   const activitySavedRef = useRef(false);
+  const autoPlayedPhraseRef = useRef<string | null>(null);
   const nextBlank = round?.tokens.find((token) => token.hidden && !round.filledIds.includes(token.id));
 
   useEffect(() => {
@@ -264,6 +282,7 @@ export default function PhraseMixGame() {
         ? result.phrase.isCollectionCompleted ? "first-letter" : "fill-blanks"
         : "first-letter";
       const nextPhrase = { ...result.phrase, activeRecall: useActiveRecall, gameMode };
+      setPhraseInstanceId(requestId);
       setPlayerReady(false);
       setPhrase(nextPhrase);
       setTranslationExpanded(useActiveRecall);
@@ -280,7 +299,7 @@ export default function PhraseMixGame() {
   useEffect(() => {
     if (authLoading || recordsLoading || !favoritesPreferenceLoaded || autoStartRef.current) return;
     autoStartRef.current = true;
-    activitySessionIdRef.current = crypto.randomUUID();
+    activitySessionIdRef.current = createSessionId();
     activityWordsCoveredRef.current = 0;
     activitySavedRef.current = false;
     void loadNextPhrase();
@@ -392,6 +411,14 @@ export default function PhraseMixGame() {
     playerRef.current?.seekTo(Math.max(0, phrase.start - AUDIO_START_BUFFER_SECONDS));
     playerRef.current?.play();
   }, [phrase, playerReady, rewardReady]);
+
+  useEffect(() => {
+    if (!phrase || phrase.activeRecall || !playerReady || loadingPhrase || transcriptEditOpen || explanationStatus !== "closed") return;
+    const phraseKey = String(phraseInstanceId);
+    if (autoPlayedPhraseRef.current === phraseKey) return;
+    autoPlayedPhraseRef.current = phraseKey;
+    replayPhrase();
+  }, [explanationStatus, loadingPhrase, phrase, phraseInstanceId, playerReady, replayPhrase, transcriptEditOpen]);
 
   const finishPhrase = useCallback((answeredCorrectly: boolean) => {
     if (!phrase) return;
@@ -575,7 +602,7 @@ export default function PhraseMixGame() {
 
   const videoPlayer = phrase ? (
     <YouTubePlayer
-      key={phrase.youtubeId}
+      key={`${phraseInstanceId}:${phrase.youtubeId}`}
       ref={playerRef}
       videoId={phrase.youtubeId}
       onReady={() => setPlayerReady(true)}

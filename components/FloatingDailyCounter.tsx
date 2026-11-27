@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type PointerEvent } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Flame } from "lucide-react";
@@ -18,6 +18,9 @@ type DragState = Position & {
 
 const POSITION_KEY = "lingo-clips:floating-daily-counter-position:v1";
 const EDGE_GAP = 16;
+const subscribeToMount = () => () => {};
+const getMountedSnapshot = () => true;
+const getServerMountedSnapshot = () => false;
 
 export default function FloatingDailyCounter() {
   const { userId, loading: authLoading } = useAuthState();
@@ -29,6 +32,7 @@ export default function FloatingDailyCounter() {
   const dragRef = useRef<DragState | null>(null);
   const suppressClickRef = useRef(false);
   const [position, setPosition] = useState<Position>({ right: EDGE_GAP, bottom: EDGE_GAP });
+  const hasMounted = useSyncExternalStore(subscribeToMount, getMountedSnapshot, getServerMountedSnapshot);
 
   const updatePosition = useCallback((value: Position) => {
     positionRef.current = value;
@@ -118,6 +122,7 @@ export default function FloatingDailyCounter() {
   }
 
   if (
+    !hasMounted ||
     authLoading ||
     !userId ||
     isStatsPage
