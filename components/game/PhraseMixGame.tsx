@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpDown, ChevronUp, Globe, Loader2, LogOut, Shuffle, SkipForward, Sparkles } from "lucide-react";
+import { ArrowUpDown, ChevronUp, Globe, Loader2, LockKeyhole, LogOut, Shuffle, SkipForward, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
@@ -11,7 +11,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useStreamingExplanation } from "@/hooks/useStreamingExplanation";
 import TranscriptTimingModal, { type TranscriptEditContext, type TranscriptEditSave } from "@/components/TranscriptTimingEditor";
 import PhraseMixFavoriteButton from "@/components/game/PhraseMixFavoriteButton";
-import { buildRound, countHideableWords, firstLetterOf, normalizeLetter } from "@/lib/game/buildRound";
+import WordBank from "@/components/game/WordBank";
+import { buildRound, buildWordPool, countHideableWords, firstLetterOf, normalizeLetter, sameWord } from "@/lib/game/buildRound";
 import { readExplanationCache } from "@/lib/explanations/cache";
 import { AUDIO_END_BUFFER_SECONDS, AUDIO_START_BUFFER_SECONDS } from "@/lib/lyricTiming";
 import { queueLearningActivitySave, saveLearningActivity } from "@/lib/learningActivity";
@@ -34,6 +35,9 @@ type Phrase = {
   sourceSlug: string;
   isPublic: boolean | null;
   isFavorite: boolean;
+  isCollectionCompleted?: boolean;
+  activeRecall?: boolean;
+  gameMode?: "fill-blanks" | "first-letter";
   previousLine?: { text: string; start: number; duration: number };
   nextLine?: { text: string; start: number; duration: number };
   lines?: { text: string; start: number; duration: number }[];
@@ -96,16 +100,26 @@ export default function PhraseMixGame() {
   const [translationExpanded, setTranslationExpanded] = useState(false);
   const [transcriptEditOpen, setTranscriptEditOpen] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [rewardRevealed, setRewardRevealed] = useState(false);
+  const [rewardReady, setRewardReady] = useState(false);
   const playerRef = useRef<PlayerHandle>(null);
   const pausedAtBoundaryRef = useRef(false);
   const phraseRequestIdRef = useRef(0);
   const lineTranslationRequestIdRef = useRef(0);
   const phraseRef = useRef<HTMLDivElement>(null);
   const autoStartRef = useRef(false);
+  const favoriteFilterKeyRef = useRef<string | null>(null);
+  const nextSourceTypeRef = useRef<"media" | "collection">("media");
+  const nextCollectionRecallRef = useRef(false);
   const activitySessionIdRef = useRef<string | null>(null);
   const activityWordsCoveredRef = useRef(0);
   const activitySavedRef = useRef(false);
   const nextBlank = round?.tokens.find((token) => token.hidden && !round.filledIds.includes(token.id));
+
+  useEffect(() => {
+    nextSourceTypeRef.current = "media";
+    nextCollectionRecallRef.current = false;
+  }, [favoriteMedia, favoriteCollections, sourceLanguage]);
 
   useEffect(() => {
     let active = true;
@@ -198,24 +212,41 @@ export default function PhraseMixGame() {
     setLineTranslationStatus("idle");
     setLineTranslationError("");
     setTranslationExpanded(false);
+    setRewardRevealed(false);
+    setRewardReady(false);
     setError("none");
-    const params = new URLSearchParams({
-      action: "next",
-      language: sourceLanguage,
-      favoriteMedia: String(favoriteMedia && Boolean(userId)),
-      favoriteCollections: String(favoriteCollections && Boolean(userId)),
-    });
-    if (excludedVideoId) params.set("excludeVideoId", excludedVideoId);
     try {
-      let response = await fetch(`/api/phrase-mix?${params.toString()}`, { cache: "no-store" });
-      let result = await response.json() as { phrase?: Phrase; error?: string };
-      if (response.ok && !result.phrase && excludedVideoId) {
-        params.delete("excludeVideoId");
-        response = await fetch(`/api/phrase-mix?${params.toString()}`, { cache: "no-store" });
-        result = await response.json() as { phrase?: Phrase; error?: string };
+      const useFavoriteMedia = favoriteMedia && Boolean(userId);
+      const useFavoriteCollections = favoriteCollections && Boolean(userId);
+      const alternatingSources = useFavoriteMedia === useFavoriteCollections;
+      const requestedSource = alternatingSources
+        ? nextSourceTypeRef.current
+        : useFavoriteCollections ? "collection" : "media";
+      const sourceOrder: Array<"media" | "collection"> = alternatingSources
+        ? [requestedSource, requestedSource === "media" ? "collection" : "media"]
+        : [requestedSource];
+      let response: Response | null = null;
+      let result: { phrase?: Phrase; error?: string } = {};
+      for (const sourceType of sourceOrder) {
+        for (const excludeId of excludedVideoId ? [excludedVideoId, ""] : [""]) {
+          const params = new URLSearchParams({
+            action: "next",
+            language: sourceLanguage,
+            favoriteMedia: String(useFavoriteMedia),
+            favoriteCollections: String(useFavoriteCollections),
+            sourceType,
+          });
+          if (excludeId) params.set("excludeVideoId", excludeId);
+          response = await fetch(`/api/phrase-mix?${params.toString()}`, { cache: "no-store" });
+          result = await response.json() as { phrase?: Phrase; error?: string };
+          if (response.ok && result.phrase) break;
+          if (response.status !== 404) break;
+        }
+        if (response?.ok && result.phrase) break;
+        if (response && response.status !== 404) break;
       }
       if (requestId !== phraseRequestIdRef.current) return null;
-      if (!response.ok || !result.phrase) {
+      if (!response?.ok || !result.phrase) {
         setError(result.error === "NO_PHRASES" ? "empty" : "load");
         return null;
       }
@@ -223,10 +254,21 @@ export default function PhraseMixGame() {
         setError("load");
         return null;
       }
+      const selectedSource = result.phrase.sourceType;
+      if (alternatingSources) nextSourceTypeRef.current = selectedSource === "media" ? "collection" : "media";
+      const activeRecall = selectedSource === "collection" && nextCollectionRecallRef.current;
+      if (selectedSource === "collection") nextCollectionRecallRef.current = !nextCollectionRecallRef.current;
+      const wordCount = result.phrase.text.trim().split(/\s+/u).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
+      const useActiveRecall = activeRecall && wordCount <= 10;
+      const gameMode: NonNullable<Phrase["gameMode"]> = useActiveRecall
+        ? result.phrase.isCollectionCompleted ? "first-letter" : "fill-blanks"
+        : "first-letter";
+      const nextPhrase = { ...result.phrase, activeRecall: useActiveRecall, gameMode };
       setPlayerReady(false);
-      setPhrase(result.phrase);
-      setRound(buildRound(0, result.phrase.text, { mode: "first-letter", difficulty: "hard" }, []));
-      return result.phrase;
+      setPhrase(nextPhrase);
+      setTranslationExpanded(useActiveRecall);
+      setRound(buildRound(0, nextPhrase.text, { mode: gameMode, difficulty: "hard" }, buildWordPool([nextPhrase.text])));
+      return nextPhrase;
     } catch {
       if (requestId === phraseRequestIdRef.current) setError("load");
       return null;
@@ -243,6 +285,19 @@ export default function PhraseMixGame() {
     activitySavedRef.current = false;
     void loadNextPhrase();
   }, [authLoading, favoritesPreferenceLoaded, loadNextPhrase, recordsLoading]);
+
+  useEffect(() => {
+    if (authLoading || !favoritesPreferenceLoaded) return;
+    const filterKey = `${userId ?? "guest"}:${sourceLanguage}:${favoriteMedia}:${favoriteCollections}`;
+    if (favoriteFilterKeyRef.current === null) {
+      favoriteFilterKeyRef.current = filterKey;
+      return;
+    }
+    if (favoriteFilterKeyRef.current === filterKey) return;
+    favoriteFilterKeyRef.current = filterKey;
+    setCurrentStreak(0);
+    void loadNextPhrase();
+  }, [authLoading, favoriteCollections, favoriteMedia, favoritesPreferenceLoaded, loadNextPhrase, sourceLanguage, userId]);
 
   async function saveRecord(score: number) {
     const date = new Date().toISOString().slice(0, 10);
@@ -300,7 +355,7 @@ export default function PhraseMixGame() {
     void loadNextPhrase(phrase?.youtubeId);
   }
 
-  function registerWrongLetter() {
+  function registerWrongAnswer() {
     setShakeKey((value) => value + 1);
     setCurrentStreak(0);
     if (!nextBlank || !round) return;
@@ -309,7 +364,7 @@ export default function PhraseMixGame() {
     setConsecutiveMistakes(mistakeCount);
     if (mistakeCount === 1) {
       void showLineTranslation();
-    } else if (mistakeCount === 2) {
+    } else if (mistakeCount === 2 && !phrase?.activeRecall) {
       replayPhrase();
     }
     if (mistakeCount < 2) return;
@@ -322,16 +377,34 @@ export default function PhraseMixGame() {
       revealedIds: [...round.revealedIds, nextBlank.id],
     });
     if (!round.tokens.some((token) => token.hidden && !filledIds.includes(token.id))) {
-      void loadNextPhrase(phrase?.youtubeId);
+      finishPhrase(false);
     }
   }
 
   const replayPhrase = useCallback(() => {
     if (!phrase || !playerReady) return;
     pausedAtBoundaryRef.current = false;
+    if (phrase.activeRecall) {
+      if (!rewardReady) return;
+      playerRef.current?.playTimedRange(phrase.start, phrase.start + phrase.duration);
+      return;
+    }
     playerRef.current?.seekTo(Math.max(0, phrase.start - AUDIO_START_BUFFER_SECONDS));
     playerRef.current?.play();
-  }, [phrase, playerReady]);
+  }, [phrase, playerReady, rewardReady]);
+
+  const finishPhrase = useCallback((answeredCorrectly: boolean) => {
+    if (!phrase) return;
+    if (phrase.activeRecall && answeredCorrectly) {
+      setRewardRevealed(true);
+      playerRef.current?.playTimedRange(phrase.start, phrase.start + phrase.duration, () => {
+        setRewardReady(true);
+        void loadNextPhrase(phrase.youtubeId);
+      });
+      return;
+    }
+    void loadNextPhrase(phrase.youtubeId);
+  }, [loadNextPhrase, phrase]);
 
   const handleTimeUpdate = useCallback((seconds: number) => {
     if (
@@ -379,7 +452,7 @@ export default function PhraseMixGame() {
     }
   }
 
-  async function showLineTranslation() {
+  const showLineTranslation = useCallback(async () => {
     if (!phrase) return;
     setTranslationExpanded(true);
     if (lineTranslation || lineTranslationStatus === "loading") return;
@@ -408,7 +481,13 @@ export default function PhraseMixGame() {
           : t("lyrics.translationError"));
       setLineTranslationStatus("error");
     }
-  }
+  }, [lineTranslation, lineTranslationStatus, phrase, sourceLanguage, t, targetLanguage]);
+
+  useEffect(() => {
+    if (!phrase?.activeRecall || loadingPhrase || lineTranslation || lineTranslationStatus !== "idle") return;
+    const timeoutId = window.setTimeout(() => void showLineTranslation(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [lineTranslation, lineTranslationStatus, loadingPhrase, phrase, showLineTranslation]);
 
   function toggleTranslation() {
     if (translationExpanded) {
@@ -418,13 +497,8 @@ export default function PhraseMixGame() {
     void showLineTranslation();
   }
 
-  function handleLetter(letter: string) {
+  function registerCorrectAnswer(bankItemId?: string) {
     if (!nextBlank || !round || loadingPhrase) return;
-    if (normalizeLetter(letter) !== normalizeLetter(firstLetterOf(nextBlank))) {
-      registerWrongLetter();
-      return;
-    }
-
     setConsecutiveMistakes(0);
     const nextStreak = currentStreak + 1;
     setCurrentStreak(nextStreak);
@@ -432,10 +506,30 @@ export default function PhraseMixGame() {
     incrementWordsToday();
     void saveRecord(nextStreak);
     const filledIds = [...round.filledIds, nextBlank.id];
-    setRound({ ...round, filledIds });
-    if (!round.tokens.some((token) => token.hidden && !filledIds.includes(token.id))) {
-      void loadNextPhrase(phrase?.youtubeId);
+    setRound({
+      ...round,
+      filledIds,
+      bank: bankItemId ? round.bank.map((item) => item.id === bankItemId ? { ...item, used: true } : item) : round.bank,
+    });
+    if (!round.tokens.some((token) => token.hidden && !filledIds.includes(token.id))) finishPhrase(true);
+  }
+
+  function handleLetter(letter: string) {
+    if (!nextBlank || !round || loadingPhrase || (phrase?.activeRecall && !playerReady)) return;
+    if (normalizeLetter(letter) !== normalizeLetter(firstLetterOf(nextBlank))) {
+      registerWrongAnswer();
+      return;
     }
+    registerCorrectAnswer();
+  }
+
+  function handlePickWord(item: { id: string; text: string; used: boolean }) {
+    if (!nextBlank || !round || loadingPhrase || (phrase?.activeRecall && !playerReady) || item.used) return;
+    if (!sameWord(item.text, nextBlank.core)) {
+      registerWrongAnswer();
+      return;
+    }
+    registerCorrectAnswer(item.id);
   }
 
   const letterHandlerRef = useRef(handleLetter);
@@ -455,6 +549,7 @@ export default function PhraseMixGame() {
         replayPhrase();
         return;
       }
+      if (phrase?.gameMode === "fill-blanks") return;
       if (event.key.length !== 1 || !/\p{L}/u.test(event.key)) return;
       event.preventDefault();
       letterHandlerRef.current(event.key);
@@ -518,7 +613,15 @@ export default function PhraseMixGame() {
           <PhraseMixFavoriteButton key={`${phrase.sourceType}:${phrase.sourceType === "media" ? phrase.songId : phrase.sourceSlug}:${phrase.isFavorite}`} sourceType={phrase.sourceType} sourceId={phrase.sourceType === "media" ? phrase.songId : phrase.sourceSlug} initialFavorite={phrase.isFavorite} />
         </> : <span className="text-muted-foreground">&nbsp;</span>}
       </div>
-      {videoPlayer}
+      <div className="relative">
+        {videoPlayer}
+        {phrase?.activeRecall && (
+          <div className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-zinc-950/75 px-6 text-center text-white backdrop-blur-sm transition-opacity duration-500 ${rewardRevealed ? "pointer-events-none opacity-0" : "opacity-100"}`} role="status" aria-hidden={rewardRevealed}>
+            <LockKeyhole className="size-9 text-primary" aria-hidden="true" />
+            <p className="max-w-md text-lg font-semibold sm:text-xl">{t("collections.activeRecallOverlay")}</p>
+          </div>
+        )}
+      </div>
 
       <div className="grid w-full grid-cols-2 gap-1 rounded-xl border border-neutral-800 bg-neutral-900/80 p-2.5 text-center text-xs text-neutral-100 sm:grid-cols-3 sm:gap-3 sm:px-4 sm:text-sm">
         <div className="min-w-0">
@@ -539,9 +642,9 @@ export default function PhraseMixGame() {
         <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={loadingPhrase} onClick={skipPhrase}>
           {phrase ? <SkipForward className="size-4" /> : <Shuffle className="size-4" />}{t(phrase ? "game.phraseMix.skip" : "game.phraseMix.start")}
         </Button>
-        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={!phrase || !playerReady || loadingPhrase} onClick={replayPhrase}>
+        {phrase && (!phrase.activeRecall || rewardReady) && <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={!playerReady || loadingPhrase} onClick={replayPhrase}>
           <ArrowUpDown className="size-4" />{t("game.replay")}
-        </Button>
+        </Button>}
         <div className="flex min-w-0 flex-wrap items-center justify-center gap-1">
           <TranscriptTimingModal
             context={lineEditContext}
@@ -566,7 +669,7 @@ export default function PhraseMixGame() {
                 ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex + 1)?.line;
               if (!updatedLine) return;
               setPhrase({ ...phrase, ...(save.lines ? { lines: save.lines } : {}), lineIndex: currentLineIndex, text: updatedLine.text, start: updatedLine.start, duration: updatedLine.duration });
-              setRound(buildRound(0, updatedLine.text, { mode: "first-letter", difficulty: "hard" }, []));
+              setRound(buildRound(0, updatedLine.text, { mode: phrase.gameMode ?? "first-letter", difficulty: "hard" }, buildWordPool([updatedLine.text])));
               if (updatedLine.text !== phrase.text) {
                 lineTranslationRequestIdRef.current += 1;
                 setLineTranslation(null);
@@ -588,9 +691,9 @@ export default function PhraseMixGame() {
           <Button className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")} aria-label={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")} aria-expanded={explanationStatus === "open"} disabled={!phrase || explanationStatus === "loading"} onClick={() => void toggleExplanation()}>
             {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : explanationStatus === "open" ? <ChevronUp className="size-4" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
           </Button>
-          <Button className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-label={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-expanded={translationExpanded} disabled={!phrase} onClick={() => void toggleTranslation()}>
+          {!phrase?.activeRecall && <Button className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-label={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-expanded={translationExpanded} disabled={!phrase} onClick={() => void toggleTranslation()}>
             {lineTranslationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}
-          </Button>
+          </Button>}
           <label className="flex items-center gap-1 whitespace-nowrap text-xs">
             <input type="checkbox" checked={favoriteMedia && Boolean(userId)} onChange={(event) => setFavoriteMedia(event.target.checked)} disabled={authLoading || !userId || !favoritesPreferenceLoaded || loadingPhrase} className="size-4 accent-primary" />
             {t("game.phraseMix.favoriteMedia")}
@@ -606,6 +709,14 @@ export default function PhraseMixGame() {
         </Button>
       </div>
 
+      {phrase?.activeRecall && (
+        <div className="rounded-xl border border-primary/40 bg-primary/10 px-5 py-4 text-center" aria-live="polite">
+          {lineTranslationStatus === "loading" && <p className="text-sm text-muted-foreground">{t("lyrics.translationLoading")}</p>}
+          {lineTranslationStatus === "error" && <div className="space-y-2"><p role="alert" className="text-sm text-destructive">{lineTranslationError}</p><Button type="button" size="sm" variant="outline" onClick={() => void showLineTranslation()}>{t("game.tryAgain")}</Button></div>}
+          {lineTranslation && <p className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">{lineTranslation}</p>}
+        </div>
+      )}
+
       {phrase && (
         <div ref={phraseRef} className="rounded-xl border bg-card p-5">
           <div className="flex items-start gap-3">
@@ -614,11 +725,11 @@ export default function PhraseMixGame() {
                 if (!token.hidden) return <span key={token.id}>{token.raw}</span>;
                 if (round.revealedIds.includes(token.id)) return <span key={token.id} className="font-semibold text-amber-700 dark:text-amber-300">{token.raw}</span>;
                 if (round.filledIds.includes(token.id)) return <span key={token.id} className="font-semibold text-emerald-700 dark:text-emerald-300">{token.raw}</span>;
-                return <span key={token.id}>{token.leading}<span role="img" aria-label={t("game.hiddenWord")} className="inline-flex min-w-8 items-center justify-center px-1 text-center leading-none text-foreground" style={{ width: `${Math.min(Math.max(token.core.length, 2), 14)}ch` }}>{maskWord(token.core)}</span>{token.trailing}</span>;
+                return <span key={token.id}>{token.leading}<span role="img" aria-label={t("game.hiddenWord")} className="inline-flex min-w-8 items-center justify-center px-1 text-center leading-none text-foreground" style={{ width: `${Math.min(Math.max(token.core.length, 2), 14)}ch` }}>{phrase.gameMode === "first-letter" ? maskWord(token.core) : "___"}</span>{token.trailing}</span>;
               })}
             </p>
           </div>
-          {translationExpanded && (
+          {translationExpanded && !phrase.activeRecall && (
             <div className="mt-3 rounded bg-muted/50 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
               {lineTranslationStatus === "loading" && t("lyrics.translationLoading")}
               {lineTranslationStatus === "error" && <p role="alert" className="text-destructive">{lineTranslationError}</p>}
@@ -626,6 +737,10 @@ export default function PhraseMixGame() {
             </div>
           )}
         </div>
+      )}
+
+      {phrase?.gameMode === "fill-blanks" && round && (
+        <WordBank items={round.bank} onPick={handlePickWord} disabled={loadingPhrase || (phrase.activeRecall && !playerReady)} />
       )}
 
       {!phrase && loadingPhrase && <p className="flex items-center justify-center gap-2 rounded-xl border bg-card p-5 text-sm text-muted-foreground" role="status"><Loader2 className="size-4 animate-spin" aria-hidden="true" />{t("game.phraseMix.next")}</p>}

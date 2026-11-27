@@ -72,6 +72,10 @@ type Props = {
   onQuit: () => void;
   active: boolean;
   learningActivitySource?: LearningActivitySource;
+  activeRecall?: boolean;
+  activeRecallRewardReady?: boolean;
+  onActiveRecallComplete?: (lineIndex: number, nextLineIndex: number | null, onRewardFinished: () => void) => void;
+  onPlayActiveRecallReward?: (lineIndex: number) => void;
 };
 
 function maskWordPreservingApostrophes(word: string): string {
@@ -80,7 +84,7 @@ function maskWordPreservingApostrophes(word: string): string {
   ).join("");
 }
 
-export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, collectionId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active, learningActivitySource }: Props) {
+export default function GameMode({ lines, currentTime, youtubeId, getLineYoutubeId, songId, collectionId, canEdit = false, getLineEditContext, onEditPlayLine, onLineSaved, onPlayLine, onStart, onAutoAdvance, onPauseAtBoundary, onPause, settings, onDifficultyChange, onProgressChange, startRequest, hasPlaybackStarted, onQuit, active, learningActivitySource, activeRecall = false, activeRecallRewardReady = false, onActiveRecallComplete, onPlayActiveRecallReward }: Props) {
   const { t, sourceLanguage, targetLanguage } = useLanguage();
   const { incrementWordsToday } = useDailyWordCounter();
   const activitySource = learningActivitySource ?? (songId ? "media" : "collection");
@@ -272,7 +276,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     }
   }
 
-  async function showLineTranslation() {
+  const showLineTranslation = useCallback(async () => {
     if (!currentLine || !round || !currentTranslationKey) return;
     setExpandedTranslationKey(currentTranslationKey);
     if (currentLineTranslation || lineTranslationStates[currentTranslationKey] === "loading") return;
@@ -306,7 +310,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       setLineTranslationStates((previous) => ({ ...previous, [currentTranslationKey]: "error" }));
       setLineTranslationErrors((previous) => ({ ...previous, [currentTranslationKey]: message }));
     }
-  }
+  }, [currentLine, currentLineTranslation, currentTranslationKey, getLineYoutubeId, lineTranslationStates, round, sourceLanguage, t, targetLanguage, youtubeId]);
 
   function toggleLineTranslation() {
     if (expandedTranslationKey === currentTranslationKey) {
@@ -317,9 +321,17 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   }
 
   useEffect(() => {
+    if (!activeRecall || phase !== "playing" || !currentLine || !round || transcriptEditOpen) return;
+    if (currentLineTranslation || lineTranslationStates[currentTranslationKey]) return;
+    const timeoutId = window.setTimeout(() => void showLineTranslation(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeRecall, currentLine, currentLineTranslation, currentTranslationKey, lineTranslationStates, phase, round, showLineTranslation, transcriptEditOpen]);
+
+  useEffect(() => {
     if (!active || phase !== "playing" || !currentLine || transcriptEditOpen) {
       return;
     }
+    if (activeRecall) return;
 
     const nextLineStart = playable[position + 1]?.line.start;
     const lineEnd = currentLine.start + currentLine.duration;
@@ -356,7 +368,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       onPause?.();
       queueMicrotask(() => setPhase("finished"));
     }
-  }, [active, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, transcriptEditOpen, round, startRound]);
+  }, [active, activeRecall, currentTime, currentLine, isRoundComplete, onAutoAdvance, onPauseAtBoundary, onPause, phase, playable, position, transcriptEditOpen, round, startRound]);
 
   useEffect(() => {
     if (phase !== "finished" || progressSavedRef.current) return;
@@ -421,7 +433,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     setPhase("playing");
     onPause?.();
     const firstLine = playable[0];
-    if (firstLine) onStart?.(firstLine.line.start, firstLine.index);
+    if (firstLine && !activeRecall) onStart?.(firstLine.line.start, firstLine.index);
   }
 
   useEffect(() => {
@@ -430,7 +442,8 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
 
     if (phase === "playing" && round) {
       handledStartRequestRef.current = startRequest;
-      onPlayLine?.(currentLine?.start ?? playable[position].line.start, round?.lineIndex ?? playable[position].index);
+      if (activeRecall) onPause?.();
+      else onPlayLine?.(currentLine?.start ?? playable[position].line.start, round?.lineIndex ?? playable[position].index);
       return;
     }
     if (!hasPlaybackStarted) return;
@@ -455,9 +468,10 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       setProgressStatus("idle");
       startRound(startPosition);
       setPhase("playing");
-      onPlayLine?.(playable[startPosition].line.start, playable[startPosition].index);
+      if (activeRecall) onPause?.();
+      else onPlayLine?.(playable[startPosition].line.start, playable[startPosition].index);
     });
-  }, [active, currentLine, currentTime, hasPlaybackStarted, onPlayLine, phase, playable, position, round, startRequest, startRound]);
+  }, [active, activeRecall, currentLine, currentTime, hasPlaybackStarted, onPause, onPlayLine, phase, playable, position, round, startRequest, startRound]);
 
   const goPrevious = useCallback(() => {
     if (position <= 0) return;
@@ -468,10 +482,15 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     onPlayLine?.(previousLine.start, playable[previousPosition].index);
   }, [onPlayLine, playable, position, startRound]);
   const replayCurrentLine = useCallback(() => {
+    if (activeRecall && !activeRecallRewardReady) return;
+    if (activeRecall && onPlayActiveRecallReward && round) {
+      onPlayActiveRecallReward(round.lineIndex);
+      return;
+    }
     if (!currentLine || !onPlayLine) return;
     pauseRequestedRoundRef.current = null;
     onPlayLine(currentLine.start, round?.lineIndex ?? position);
-  }, [currentLine, onPlayLine, position, round?.lineIndex]);
+  }, [activeRecall, activeRecallRewardReady, currentLine, onPlayActiveRecallReward, onPlayLine, position, round]);
 
   async function quitToSetup() {
     const sessionId = activitySessionIdRef.current;
@@ -492,6 +511,20 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
   }
 
   // ---------- Answer handling ----------
+
+  function completeActiveRecallLine(lineIndex: number) {
+    const nextEntry = playable[position + 1];
+    const advance = () => {
+      if (nextEntry) {
+        startRound(position + 1);
+      } else {
+        onPause?.();
+        setPhase("finished");
+      }
+    };
+    if (onActiveRecallComplete) onActiveRecallComplete(lineIndex, nextEntry?.index ?? null, advance);
+    else advance();
+  }
 
   function registerCorrect(tokenId: number, bankItemId?: string) {
     const wordKey = `${round?.lineIndex ?? ""}:${tokenId}`;
@@ -514,6 +547,9 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
           }
         : prev,
     );
+    if (activeRecall && round && round.filledIds.length + 1 >= hiddenCount) {
+      completeActiveRecallLine(round.lineIndex);
+    }
   }
 
   function registerWrong(token: WordToken) {
@@ -541,6 +577,10 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
     setConsecutiveMistakes(0);
 
     const hiddenCount = round.tokens.filter((item) => item.hidden).length;
+    if (activeRecall && round.filledIds.length + 1 >= hiddenCount) {
+      completeActiveRecallLine(round.lineIndex);
+    }
+
     if (round.filledIds.length + 1 >= hiddenCount && phase === "playing" && pauseRequestedRoundRef.current === round) {
       const nextEntry = playable[position + 1];
       if (nextEntry) onPlayLine?.(nextEntry.line.start, nextEntry.index);
@@ -586,12 +626,14 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
         return; // Typing into a field does not count as a game answer.
       }
       if (event.key === "ArrowLeft") {
+        if (activeRecall) return;
         if (!currentLine || !onPlayLine || position === 0) return;
         event.preventDefault();
         goPrevious();
         return;
       }
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (activeRecall && !activeRecallRewardReady) return;
         if (!currentLine || !onPlayLine) return;
         event.preventDefault();
         replayCurrentLine();
@@ -606,7 +648,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentLine, goPrevious, isGamePlaying, onPlayLine, position, replayCurrentLine, settings.mode]);
+  }, [activeRecall, activeRecallRewardReady, currentLine, goPrevious, isGamePlaying, onPlayLine, position, replayCurrentLine, settings.mode]);
 
   // ---------- Shake animation for incorrect answers ----------
   // Use the Web Animations API instead of CSS keyframes.
@@ -733,13 +775,13 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
       )}
 
       <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_minmax(0,1fr)]">
-        {onPlayLine && (
+        {onPlayLine && !activeRecall && (
           <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={position === 0} onClick={goPrevious}>
             <ArrowLeft className="size-4" />
             {t("game.previous")}
           </Button>
         )}
-        {onPlayLine && (
+        {onPlayLine && (!activeRecall || activeRecallRewardReady) && (
           <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" onClick={replayCurrentLine}>
             <ArrowUpDown className="size-4" />
             {t("game.replay")}
@@ -789,6 +831,21 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
           </span>
         </Button>
       </div>
+
+      {activeRecall && (
+        <div className="rounded-xl border border-primary/40 bg-primary/10 px-5 py-4 text-center" aria-live="polite">
+          {lineTranslationStates[currentTranslationKey] === "loading" && (
+            <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" aria-hidden="true" />{t("lyrics.translationLoading")}</p>
+          )}
+          {lineTranslationStates[currentTranslationKey] === "error" && (
+            <div className="space-y-2">
+              <p role="alert" className="text-sm text-destructive">{lineTranslationErrors[currentTranslationKey] ?? t("lyrics.translationError")}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => void showLineTranslation()}>{t("game.tryAgain")}</Button>
+            </div>
+          )}
+          {currentLineTranslation && <p className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">{currentLineTranslation}</p>}
+        </div>
+      )}
 
       {/* Song line. The ref is used for the shake animation. */}
       <div ref={lineRef} className="rounded-xl border bg-card p-5">
@@ -841,7 +898,7 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
           })}
         </p>
         </div>
-        {expandedTranslationKey === currentTranslationKey && (
+        {!activeRecall && expandedTranslationKey === currentTranslationKey && (
           <div className="mt-3 rounded bg-muted/50 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
             {lineTranslationStates[currentTranslationKey] === "loading" && t("lyrics.translationLoading")}
             {lineTranslationStates[currentTranslationKey] === "error" && (

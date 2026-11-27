@@ -81,5 +81,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "PROGRESS_SAVE_FAILED" }, { status: 500 });
   }
 
+  if (collectionId && completed) {
+    const { error: completionOverrideError } = await db.from("user_collection_completion")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("collection_id", collectionId);
+    if (completionOverrideError) {
+      console.error("[api/media-progress] Could not clear manual collection completion override", { code: completionOverrideError.code });
+      return NextResponse.json({ error: "PROGRESS_SAVE_FAILED" }, { status: 500 });
+    }
+  }
+
   return NextResponse.json({ saved: true, isCompleted });
 }

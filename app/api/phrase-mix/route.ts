@@ -45,6 +45,29 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
       typeof row.duration !== "number" || !Number.isFinite(row.duration) || row.duration <= 0
     ) return null;
     const { data: collection } = await db.from("word_collections").select("user_id").eq("id", row.source_slug).maybeSingle();
+    let isCollectionCompleted = false;
+    if (userId) {
+      const { data: manual, error: manualError } = await db.from("user_collection_completion")
+        .select("is_completed")
+        .eq("user_id", userId)
+        .eq("collection_id", row.source_slug)
+        .maybeSingle();
+      if (manualError) {
+        console.error("[api/phrase-mix] Collection completion lookup failed", { code: manualError.code });
+        return null;
+      }
+      if (manual) {
+        isCollectionCompleted = manual.is_completed;
+      } else {
+        const { data: progress } = await db.from("user_collection_progress")
+          .select("collection_id")
+          .eq("user_id", userId)
+          .eq("collection_id", row.source_slug)
+          .eq("is_completed", true)
+          .limit(1);
+        isCollectionCompleted = Boolean(progress?.length);
+      }
+    }
     return {
       songId: row.song_id ?? "",
       canEdit: Boolean(userId && collection?.user_id === userId),
@@ -54,6 +77,7 @@ async function phraseResponse(db: NonNullable<Awaited<ReturnType<typeof createSu
       text: row.line_text,
       start: row.start_time,
       duration: row.duration,
+      isCollectionCompleted,
       ...source,
     };
   }
@@ -132,7 +156,8 @@ export async function GET(request: Request) {
     ? params.get("favoriteCollections") === "true"
     : legacyOnlyFavorites;
   const excludeVideoId = params.get("excludeVideoId");
-  if (!isLearningLanguage(language) || (excludeVideoId !== null && !/^[\w-]{11}$/u.test(excludeVideoId))) {
+  const sourceType = params.get("sourceType");
+  if (!isLearningLanguage(language) || (sourceType !== null && sourceType !== "media" && sourceType !== "collection") || (excludeVideoId !== null && !/^[\w-]{11}$/u.test(excludeVideoId))) {
     return NextResponse.json({ error: "INVALID_INPUT" }, { status: 400 });
   }
   if ((favoriteMedia || favoriteCollections) && !account) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
@@ -142,6 +167,7 @@ export async function GET(request: Request) {
     p_favorite_media: favoriteMedia,
     p_favorite_collections: favoriteCollections,
     p_excluded_video_id: excludeVideoId,
+    p_source_type: sourceType,
   });
   if (error) {
     console.error("[api/phrase-mix] Random phrase query failed", { code: error.code });
@@ -155,6 +181,7 @@ export async function GET(request: Request) {
       p_favorite_media: favoriteMedia,
       p_favorite_collections: favoriteCollections,
       p_excluded_video_id: null,
+      p_source_type: sourceType,
     });
     if (fallbackError) {
       console.error("[api/phrase-mix] Random phrase fallback failed", { code: fallbackError.code });

@@ -5,6 +5,8 @@ import InteractiveLyrics from "@/components/InteractiveLyrics";
 import LearningModeControls from "@/components/LearningModeControls";
 import GameMode from "@/components/game/GameMode";
 import SnippetPlayer, { type SnippetPlayerHandle } from "@/components/SnippetPlayer";
+import { Headphones, LockKeyhole, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/context/LanguageContext";
 import { countHideableWords } from "@/lib/game/buildRound";
 import { usePersistentState } from "@/lib/storage/usePersistentState";
@@ -31,6 +33,7 @@ export type CollectionLearningItem = {
 
 type Props = { items: CollectionLearningItem[] };
 type View = "read" | "play";
+type TrainingMode = "listening" | "active-recall";
 type TimelineEntry = {
   line: LyricLine;
   item: CollectionLearningItem;
@@ -68,6 +71,13 @@ export default function CollectionLearningSession({ items }: Props) {
       DIFFICULTIES.includes((value as GameSettings).difficulty),
   );
   const [position, setPosition] = useState(0);
+  const [trainingMode, setTrainingMode] = usePersistentState<TrainingMode>(
+    "lingo-clips:collection-training-mode",
+    "listening",
+    (value): value is TrainingMode => value === "listening" || value === "active-recall",
+  );
+  const [rewardReadyLineIndex, setRewardReadyLineIndex] = useState<number | null>(null);
+  const [rewardRevealedLineIndex, setRewardRevealedLineIndex] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
   const [clipEnded, setClipEnded] = useState(false);
@@ -191,6 +201,45 @@ export default function CollectionLearningSession({ items }: Props) {
     setGameStartRequest((request) => request + 1);
   }, [setGameSettings, setView]);
 
+  const handleTrainingMode = useCallback((mode: TrainingMode) => {
+    if (mode === trainingMode) return;
+    setTrainingMode(mode);
+    setRewardReadyLineIndex(null);
+    setRewardRevealedLineIndex(null);
+    if (mode === "active-recall") {
+      pausePlayer();
+      return;
+    }
+    if (currentEntry) playLine(currentEntry.line.start, position);
+  }, [currentEntry, pausePlayer, playLine, position, setTrainingMode, trainingMode]);
+
+  const playActiveRecallReward = useCallback((lineIndex: number, nextLineIndex: number | null, onRewardFinished: () => void) => {
+    const entry = timeline[lineIndex];
+    if (!entry) {
+      onRewardFinished();
+      return;
+    }
+    setRewardRevealedLineIndex(lineIndex);
+    playerRef.current?.playTimedRange(entry.item.startTime, entry.item.endTime, () => {
+      setRewardReadyLineIndex(lineIndex);
+      if (nextLineIndex !== null) {
+        const next = timeline[nextLineIndex];
+        setRewardReadyLineIndex(null);
+        setRewardRevealedLineIndex(null);
+        if (next) {
+          setPosition(nextLineIndex);
+          setCurrentTime(next.line.start);
+        }
+      }
+      onRewardFinished();
+    });
+  }, [timeline]);
+
+  const replayActiveRecallReward = useCallback((lineIndex: number) => {
+    const entry = timeline[lineIndex];
+    if (entry) playerRef.current?.playTimedRange(entry.item.startTime, entry.item.endTime);
+  }, [timeline]);
+
   const handleTimeUpdate = useCallback((itemPosition: number, playerTime: number) => {
     const entry = timeline[itemPosition];
     if (!entry) return;
@@ -242,31 +291,51 @@ export default function CollectionLearningSession({ items }: Props) {
 
   return (
     <div className="mx-auto mt-3 flex w-full flex-col gap-3 lg:w-[65%]">
-      <LearningModeControls
-        hideRead
-        view={view}
-        gameMode={gameSettings.mode}
-        progress={gameProgress}
-        readProgress={readLinePosition}
-        onRead={() => {
-          pausePlayer();
-          setView("read");
-        }}
-        onGameMode={handleGameMode}
-      />
+      <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+        <div className="inline-flex w-fit flex-nowrap items-center gap-1 rounded-lg border bg-muted/40 p-1" role="radiogroup" aria-label={t("collections.trainingMode")}>
+          <Button type="button" size="sm" className="gap-2" variant={trainingMode === "listening" ? "default" : "outline"} role="radio" aria-checked={trainingMode === "listening"} onClick={() => handleTrainingMode("listening")}>
+            <Headphones className="size-4" aria-hidden="true" />{t("collections.listeningMode")}
+          </Button>
+          <Button type="button" size="sm" className="gap-2" variant={trainingMode === "active-recall" ? "default" : "outline"} role="radio" aria-checked={trainingMode === "active-recall"} onClick={() => handleTrainingMode("active-recall")}>
+            <Sparkles className="size-4" aria-hidden="true" />{t("collections.activeRecallMode")}
+          </Button>
+        </div>
 
-      <SnippetPlayer
-        ref={playerRef}
-        itemId={currentEntry.item.id}
-        videoId={currentEntry.item.youtubeId}
-        startTime={currentEntry.item.startTime}
-        endTime={currentEntry.item.endTime}
-        autoPlay={autoPlay}
-        onTimeUpdate={(seconds) => handleTimeUpdate(position, seconds)}
-        onPlayingChange={onPlayingChange}
-        onEnded={() => handleClipEnded(position)}
-        onError={() => setPlayerError(true)}
-      />
+        <LearningModeControls
+          hideRead
+          className="min-w-0 flex-1"
+          view={view}
+          gameMode={gameSettings.mode}
+          progress={gameProgress}
+          readProgress={readLinePosition}
+          onRead={() => {
+            pausePlayer();
+            setView("read");
+          }}
+          onGameMode={handleGameMode}
+        />
+      </div>
+
+      <div className="relative">
+        <SnippetPlayer
+          ref={playerRef}
+          itemId={currentEntry.item.id}
+          videoId={currentEntry.item.youtubeId}
+          startTime={currentEntry.item.startTime}
+          endTime={currentEntry.item.endTime}
+          autoPlay={trainingMode === "listening" && autoPlay}
+          onTimeUpdate={(seconds) => handleTimeUpdate(position, seconds)}
+          onPlayingChange={onPlayingChange}
+          onEnded={() => handleClipEnded(position)}
+          onError={() => setPlayerError(true)}
+        />
+        {trainingMode === "active-recall" && (
+          <div className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-zinc-950/75 px-6 text-center text-white backdrop-blur-sm transition-opacity duration-500 ${rewardRevealedLineIndex === position ? "pointer-events-none opacity-0" : "opacity-100"}`} role="status" aria-hidden={rewardRevealedLineIndex === position}>
+            <LockKeyhole className="size-9 text-primary" aria-hidden="true" />
+            <p className="max-w-md text-lg font-semibold sm:text-xl">{t("collections.activeRecallOverlay")}</p>
+          </div>
+        )}
+      </div>
       {playerError && <p role="alert" className="text-sm text-destructive">{t("collections.playerError")}</p>}
 
       <div className={view === "read" ? "mx-auto w-full lg:w-[85%]" : "hidden"}>
@@ -293,6 +362,10 @@ export default function CollectionLearningSession({ items }: Props) {
           startRequest={gameStartRequest}
           lines={lines}
           collectionId={currentEntry.item.collectionId}
+          activeRecall={trainingMode === "active-recall"}
+          activeRecallRewardReady={rewardReadyLineIndex === position}
+          onActiveRecallComplete={playActiveRecallReward}
+          onPlayActiveRecallReward={replayActiveRecallReward}
           currentTime={currentTime}
           getLineYoutubeId={(lineIndex) => timeline[lineIndex]?.item.youtubeId}
           getLineEditContext={getLineEditContext}

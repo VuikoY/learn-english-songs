@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { PAGE_TEXT } from "@/lib/i18n/pages";
@@ -127,6 +128,9 @@ export default function MyCollectionsPage() {
   const [visibilityErrorId, setVisibilityErrorId] = useState<string | null>(null);
   const [visibilityMinimumId, setVisibilityMinimumId] = useState<string | null>(null);
   const [removeMinimumId, setRemoveMinimumId] = useState<string | null>(null);
+  const [markingAllCompleted, setMarkingAllCompleted] = useState(false);
+  const [markAllCompletedError, setMarkAllCompletedError] = useState(false);
+  const [markAllCompletedSuccess, setMarkAllCompletedSuccess] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -234,6 +238,35 @@ export default function MyCollectionsPage() {
       setSearchError(true);
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function markAllOwnedCollectionsCompleted() {
+    if (markingAllCompleted || !userId || collections.length === 0) return;
+    setMarkingAllCompleted(true);
+    setMarkAllCompletedError(false);
+    setMarkAllCompletedSuccess(false);
+    try {
+      const response = await fetch("/api/word-collections/completion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allOwned: true, completed: true }),
+      });
+      const result = await response.json().catch(() => null) as { collectionIds?: unknown } | null;
+      if (!response.ok || !Array.isArray(result?.collectionIds)) throw new Error("COMPLETION_SAVE_FAILED");
+      for (const collectionId of result.collectionIds) {
+        if (typeof collectionId === "string") {
+          window.dispatchEvent(new CustomEvent("collection-completion-changed", { detail: { collectionId } }));
+        }
+      }
+      setMarkAllCompletedSuccess(true);
+    } catch (error) {
+      console.error("[my-collections] Could not mark all owned collections complete.", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      setMarkAllCompletedError(true);
+    } finally {
+      setMarkingAllCompleted(false);
     }
   }
 
@@ -612,7 +645,17 @@ export default function MyCollectionsPage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
-      <h1 className="text-3xl font-bold">{t("collections.myCollections")}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold">{t("collections.myCollections")}</h1>
+        {!authLoading && userId && (
+          <Button type="button" size="sm" variant="outline" className="gap-2" disabled={markingAllCompleted || loading || collections.length === 0} onClick={() => void markAllOwnedCollectionsCompleted()}>
+            {markingAllCompleted ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}
+            {t("collections.markAllCompleted")}
+          </Button>
+        )}
+      </div>
+      {markAllCompletedError && <p role="alert" className="text-sm text-destructive">{t("collections.completionUpdateError")}</p>}
+      {markAllCompletedSuccess && <p role="status" className="text-sm text-emerald-600">{t("collections.markAllCompletedSuccess")}</p>}
       {authLoading ? (
         <p role="status" className="text-muted-foreground">{t("collections.loading")}</p>
       ) : !userId ? (

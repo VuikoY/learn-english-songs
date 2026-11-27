@@ -127,6 +127,11 @@ isOneToOne: false
                   Insert: { "accuracy": number,"completed_at"?: string | null,"collection_id": string,"difficulty": string,"id"?: string,"is_completed"?: boolean,"mistakes_count": number,"total_words": number,"user_id": string,"words_completed": number }
                   Update: { "accuracy"?: number,"completed_at"?: string | null,"collection_id"?: string,"difficulty"?: string,"id"?: string,"is_completed"?: boolean,"mistakes_count"?: number,"total_words"?: number,"user_id"?: string,"words_completed"?: number }
                   Relationships: [{ foreignKeyName: "user_collection_progress_collection_id_fkey"; columns: ["collection_id"]; isOneToOne: false; referencedRelation: "word_collections"; referencedColumns: ["id"] }]
+                },"user_collection_completion": {
+                  Row: { user_id: string; collection_id: string; is_completed: boolean; updated_at: string }
+                  Insert: { user_id: string; collection_id: string; is_completed?: boolean; updated_at?: string }
+                  Update: { user_id?: string; collection_id?: string; is_completed?: boolean; updated_at?: string }
+                  Relationships: [{ foreignKeyName: "user_collection_completion_collection_id_fkey"; columns: ["collection_id"]; isOneToOne: false; referencedRelation: "word_collections"; referencedColumns: ["id"] }]
                 },"user_phrase_mix_records": {
                   Row: { "all_time_best": number,"daily_best": number,"daily_date": string,"updated_at": string,"user_id": string }
                   Insert: { "all_time_best"?: number,"daily_best"?: number,"daily_date"?: string,"updated_at"?: string,"user_id": string }
@@ -203,7 +208,7 @@ isOneToOne: false
               }[]
             }
             "get_random_phrase_mix_line": {
-              Args: { p_language: string; p_favorite_media: boolean; p_favorite_collections: boolean; p_excluded_video_id?: string | null }
+              Args: { p_language: string; p_favorite_media: boolean; p_favorite_collections: boolean; p_excluded_video_id?: string | null; p_source_type?: string | null }
               Returns: { song_id: string | null; collection_item_id: string | null; youtube_id: string; title: string; artist: string | null; line_index: number | null; line_text: string; start_time: number; duration: number; source_type: string; source_title: string; source_slug: string; is_public: boolean | null }[]
             }
             "get_public_word_collections": {

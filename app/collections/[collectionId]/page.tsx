@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import CollectionLearningSession, { type CollectionLearningItem } from "@/components/CollectionLearningSession";
 import CollectionFavoriteButton from "@/components/CollectionFavoriteButton";
+import CollectionCompletionButton from "@/components/CollectionCompletionButton";
 import { useAuthState } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -132,7 +133,10 @@ function WordCollectionContent() {
         <>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <h1 className="text-3xl font-bold">{collection.title}</h1>
-            {collection.isPublic && <CollectionFavoriteButton collectionId={collection.id} />}
+            <div className="flex flex-wrap items-center gap-2">
+              <CollectionCompletionButton collectionId={collection.id} />
+              {collection.isPublic && <CollectionFavoriteButton collectionId={collection.id} />}
+            </div>
           </div>
 
           {items.length === 0 ? (

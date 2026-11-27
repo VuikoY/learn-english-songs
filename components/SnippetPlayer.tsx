@@ -9,6 +9,7 @@ export type SnippetPlayerHandle = {
   pause: () => void;
   restart: () => void;
   playRange: (startTime: number, endTime: number) => void;
+  playTimedRange: (startTime: number, endTime: number, onFinished?: () => void) => void;
 };
 
 type Props = {
@@ -41,6 +42,7 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
   const onErrorRef = useRef(onError);
   const previewEndTimeRef = useRef<number | null>(null);
   const previewingLineRef = useRef(false);
+  const rangeFinishedRef = useRef<(() => void) | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   onEndedRef.current = onEnded;
   onTimeUpdateRef.current = onTimeUpdate;
@@ -59,6 +61,10 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
     if (!previewingLine) {
       onTimeUpdateRef.current(bufferedEndTime);
       onEndedRef.current();
+    } else {
+      const onFinished = rangeFinishedRef.current;
+      rangeFinishedRef.current = null;
+      onFinished?.();
     }
   }, [bufferedEndTime]);
 
@@ -66,6 +72,7 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
     endedRef.current = false;
     previewEndTimeRef.current = null;
     previewingLineRef.current = false;
+    rangeFinishedRef.current = null;
     loadedItemIdRef.current = itemId;
     onTimeUpdateRef.current(bufferedStartTime);
     setIsPlaying(false);
@@ -81,6 +88,7 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
       endedRef.current = false;
       previewEndTimeRef.current = null;
       previewingLineRef.current = false;
+      rangeFinishedRef.current = null;
       player.seekTo(bufferedStartTime, true);
       player.playVideo();
     },
@@ -91,6 +99,7 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
       endedRef.current = false;
       previewEndTimeRef.current = null;
       previewingLineRef.current = false;
+      rangeFinishedRef.current = null;
       player.seekTo(bufferedStartTime, true);
       player.pauseVideo();
       onTimeUpdateRef.current(bufferedStartTime);
@@ -101,7 +110,18 @@ const SnippetPlayer = forwardRef<SnippetPlayerHandle, Props>(function SnippetPla
       endedRef.current = false;
       previewingLineRef.current = true;
       previewEndTimeRef.current = endTime + AUDIO_END_BUFFER_SECONDS;
+      rangeFinishedRef.current = null;
       player.seekTo(Math.max(0, startTime - AUDIO_START_BUFFER_SECONDS), true);
+      player.playVideo();
+    },
+    playTimedRange: (startTime, endTime, onFinished) => {
+      const player = playerRef.current;
+      if (!player || !Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) return;
+      endedRef.current = false;
+      previewingLineRef.current = true;
+      previewEndTimeRef.current = endTime;
+      rangeFinishedRef.current = onFinished ?? null;
+      player.seekTo(startTime, true);
       player.playVideo();
     },
   }), [bufferedStartTime]);
