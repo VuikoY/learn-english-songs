@@ -2,6 +2,7 @@
 "use client"; // react-youtube uses a browser iframe, so this must be a client component.
 
 import {
+  useCallback,
   forwardRef,
   useEffect,
   useImperativeHandle,
@@ -54,18 +55,6 @@ function isMissingPlayerFrameError(error: unknown): boolean {
   return error instanceof TypeError && /reading .?src|(?:null|undefined).*src/iu.test(error.message);
 }
 
-function runPlayerCommand(player: YTPlayer, command: () => void): boolean {
-  try {
-    if (!hasAttachedPlayerFrame(player)) return false;
-    command();
-    return true;
-  } catch (error) {
-    if (!isMissingPlayerFrameError(error)) throw error;
-    console.warn("[YouTubePlayer] The embedded player frame disappeared before a command completed.");
-    return false;
-  }
-}
-
 function readPlayerValue<T>(player: YTPlayer, read: () => T, fallback: T): T {
   try {
     if (!hasAttachedPlayerFrame(player)) return fallback;
@@ -87,6 +76,23 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
   const rangeFinishedRef = useRef<(() => void) | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerError, setPlayerError] = useState<number | null>(null);
+
+  const runPlayerCommand = useCallback((player: YTPlayer, command: () => void, attempt = 0): boolean => {
+    try {
+      command();
+      return true;
+    } catch (error) {
+      if (!isMissingPlayerFrameError(error)) throw error;
+      if (attempt < 3 && typeof window !== "undefined") {
+        window.setTimeout(() => {
+          if (playerRef.current === player) runPlayerCommand(player, command, attempt + 1);
+        }, 120);
+        return true;
+      }
+      console.warn("[YouTubePlayer] The embedded player frame disappeared before a command completed.");
+      return false;
+    }
+  }, []);
 
   // Expose play, pause, seekTo, and volume controls to the parent component.
   useImperativeHandle(
@@ -141,7 +147,7 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
         if (player) runPlayerCommand(player, () => { void player.setVolume(volume); });
       },
     }),
-    [onTimeUpdate],
+    [onTimeUpdate, runPlayerCommand],
   );
 
   // The YouTube IFrame API has no time-changed event, so poll getCurrentTime while playing.
@@ -172,13 +178,13 @@ const YouTubePlayer = forwardRef<PlayerHandle, Props>(function YouTubePlayer(
 
     // Stop polling when playback pauses or the component unmounts.
     return () => clearInterval(intervalId);
-  }, [isPlaying, onTimeUpdate]);
+  }, [isPlaying, onTimeUpdate, runPlayerCommand]);
 
   // Save the player instance after it loads.
   const handleReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
     setPlayerError(null);
-    if (hasAttachedPlayerFrame(event.target)) onReady?.();
+    onReady?.();
   };
 
   const handleError = (event: YouTubeEvent<number>) => {
