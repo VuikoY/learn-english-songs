@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpDown, ChevronUp, Globe, Loader2, LockKeyhole, LogOut, Shuffle, SkipForward, Sparkles } from "lucide-react";
+import { ArrowUpDown, Globe, Loader2, LockKeyhole, Shuffle, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import YouTubePlayer, { type PlayerHandle } from "@/components/YouTubePlayer";
 import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
@@ -665,60 +665,15 @@ export default function PhraseMixGame() {
         </div>
       </div>
 
-      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_minmax(0,1fr)]">
-        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={loadingPhrase} onClick={skipPhrase}>
-          {phrase ? <SkipForward className="size-4" /> : <Shuffle className="size-4" />}{t(phrase ? "game.phraseMix.skip" : "game.phraseMix.start")}
+      <div className="flex w-full flex-nowrap items-center gap-1.5">
+        <Button className="w-auto shrink-0 whitespace-nowrap px-2" type="button" variant="outline" size="sm" disabled={loadingPhrase} onClick={skipPhrase}>
+          {phrase ? <SkipForward className="size-4 shrink-0" /> : <Shuffle className="size-4 shrink-0" />}{t(phrase ? "game.phraseMix.skip" : "game.phraseMix.start")}
         </Button>
-        {phrase && (!phrase.activeRecall || rewardReady) && <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="outline" size="sm" disabled={!playerReady || loadingPhrase} onClick={replayPhrase}>
-          <ArrowUpDown className="size-4" />{t("game.replay")}
+        {phrase && (!phrase.activeRecall || rewardReady) && <Button className="w-auto shrink-0 whitespace-nowrap px-2" type="button" variant="outline" size="sm" disabled={!playerReady || loadingPhrase} onClick={replayPhrase}>
+          <ArrowUpDown className="size-4 shrink-0" />{t("game.replay")}
         </Button>}
-        <div className="flex min-w-0 flex-wrap items-center justify-center gap-1">
-          <TranscriptTimingModal
-            context={lineEditContext}
-            onPause={() => playerRef.current?.pause()}
-            onOpenChange={setTranscriptEditOpen}
-            onPlayLine={(seconds, _lineIndex, duration) => {
-              if (!phrase) return;
-              playerRef.current?.playRange(seconds, seconds + duration);
-            }}
-            onSaved={(save: TranscriptEditSave) => {
-              if (!phrase) return;
-              const currentLineIndex = save.editedLineIndex ?? (save.insert && save.insert.afterIndex < phrase.lineIndex
-                ? phrase.lineIndex + 1
-                : save.deleteLineIndex !== undefined && save.deleteLineIndex < phrase.lineIndex
-                  ? phrase.lineIndex - 1
-                  : phrase.lineIndex);
-              const updatedLine = save.lines?.[currentLineIndex]
-                ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex)?.line;
-              const previousLine = save.lines?.[currentLineIndex - 1]
-                ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex - 1)?.line;
-              const nextLine = save.lines?.[currentLineIndex + 1]
-                ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex + 1)?.line;
-              if (!updatedLine) return;
-              setPhrase({ ...phrase, ...(save.lines ? { lines: save.lines } : {}), lineIndex: currentLineIndex, text: updatedLine.text, start: updatedLine.start, duration: updatedLine.duration });
-              setRound(buildRound(0, updatedLine.text, { mode: phrase.gameMode ?? "first-letter", difficulty: "hard" }, buildWordPool([updatedLine.text])));
-              if (updatedLine.text !== phrase.text) {
-                lineTranslationRequestIdRef.current += 1;
-                setLineTranslation(null);
-                setLineTranslationStatus("idle");
-                setLineTranslationError("");
-                setTranslationExpanded(false);
-                setExplanationStatus("closed");
-                setRemoteExplanation(null);
-              }
-              if (previousLine || nextLine) {
-                setPhrase((current) => current ? {
-                  ...current,
-                  ...(previousLine ? { previousLine } : {}),
-                  ...(nextLine ? { nextLine } : {}),
-                } : current);
-              }
-            }}
-          />
-          <Button className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")} aria-label={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")} aria-expanded={explanationStatus === "open"} disabled={!phrase || explanationStatus === "loading"} onClick={() => void toggleExplanation()}>
-            {explanationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : explanationStatus === "open" ? <ChevronUp className="size-4" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
-          </Button>
-          {!phrase?.activeRecall && <Button className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-label={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-expanded={translationExpanded} disabled={!phrase} onClick={() => void toggleTranslation()}>
+        <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5">
+          {!phrase?.activeRecall && <Button className="size-8 min-w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground" type="button" size="sm" variant="ghost" title={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-label={lineTranslationStatus === "loading" ? t("lyrics.translationLoading") : translationExpanded ? t("lyrics.translationHide") : t("lyrics.translateLine")} aria-expanded={translationExpanded} disabled={!phrase} onClick={() => void toggleTranslation()}>
             {lineTranslationStatus === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}
           </Button>}
           <label className="flex items-center gap-1 whitespace-nowrap text-xs">
@@ -729,12 +684,9 @@ export default function PhraseMixGame() {
             <input type="checkbox" checked={favoriteCollections && Boolean(userId)} onChange={(event) => setFavoriteCollections(event.target.checked)} disabled={authLoading || !userId || !favoritesPreferenceLoaded || loadingPhrase} className="size-4 accent-primary" />
             {t("game.phraseMix.favoriteCollections")}
           </label>
-          {!authLoading && !userId && <p className="basis-full text-center text-xs text-neutral-300">{t("game.phraseMix.signInFavorites")}</p>}
         </div>
-        <Button className="w-full min-w-0 whitespace-normal px-2" type="button" variant="ghost" size="sm" onClick={() => void quitGame()}>
-          <span className="flex w-full items-center justify-end gap-2"><LogOut className="size-4" />{t("game.quit")}</span>
-        </Button>
       </div>
+      {!authLoading && !userId && <p className="text-center text-xs text-neutral-300">{t("game.phraseMix.signInFavorites")}</p>}
 
       {phrase?.activeRecall && (
         <div className="rounded-xl border border-primary/40 bg-primary/10 px-5 py-4 text-center" aria-live="polite">
@@ -747,6 +699,48 @@ export default function PhraseMixGame() {
       {phrase && (
         <div ref={phraseRef} className="rounded-xl border bg-card p-5">
           <div className="flex items-start gap-3">
+            <TranscriptTimingModal
+              context={lineEditContext}
+              onPause={() => playerRef.current?.pause()}
+              onOpenChange={setTranscriptEditOpen}
+              onPlayLine={(seconds, _lineIndex, duration) => {
+                if (!phrase) return;
+                playerRef.current?.playRange(seconds, seconds + duration);
+              }}
+              onSaved={(save: TranscriptEditSave) => {
+                if (!phrase) return;
+                const currentLineIndex = save.editedLineIndex ?? (save.insert && save.insert.afterIndex < phrase.lineIndex
+                  ? phrase.lineIndex + 1
+                  : save.deleteLineIndex !== undefined && save.deleteLineIndex < phrase.lineIndex
+                    ? phrase.lineIndex - 1
+                    : phrase.lineIndex);
+                const updatedLine = save.lines?.[currentLineIndex]
+                  ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex)?.line;
+                const previousLine = save.lines?.[currentLineIndex - 1]
+                  ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex - 1)?.line;
+                const nextLine = save.lines?.[currentLineIndex + 1]
+                  ?? save.updates.find(({ lineIndex }) => lineIndex === phrase.lineIndex + 1)?.line;
+                if (!updatedLine) return;
+                setPhrase({ ...phrase, ...(save.lines ? { lines: save.lines } : {}), lineIndex: currentLineIndex, text: updatedLine.text, start: updatedLine.start, duration: updatedLine.duration });
+                setRound(buildRound(0, updatedLine.text, { mode: phrase.gameMode ?? "first-letter", difficulty: "hard" }, buildWordPool([updatedLine.text])));
+                if (updatedLine.text !== phrase.text) {
+                  lineTranslationRequestIdRef.current += 1;
+                  setLineTranslation(null);
+                  setLineTranslationStatus("idle");
+                  setLineTranslationError("");
+                  setTranslationExpanded(false);
+                  setExplanationStatus("closed");
+                  setRemoteExplanation(null);
+                }
+                if (previousLine || nextLine) {
+                  setPhrase((current) => current ? {
+                    ...current,
+                    ...(previousLine ? { previousLine } : {}),
+                    ...(nextLine ? { nextLine } : {}),
+                  } : current);
+                }
+              }}
+            />
             <p className="min-w-0 flex-1 flex flex-wrap items-baseline gap-x-2 gap-y-3 text-xl leading-snug">
               {round && round.tokens.map((token) => {
                 if (!token.hidden) return <span key={token.id}>{token.raw}</span>;

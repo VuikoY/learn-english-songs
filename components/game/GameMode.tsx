@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   LogOut,
   Loader2,
-  Sparkles,
   ChevronUp,
   Globe,
 } from "lucide-react";
@@ -788,23 +787,6 @@ export default function GameMode({ lines, currentTime, youtubeId, getLineYoutube
           </Button>
         )}
         <div className="flex items-center justify-center gap-1">
-          <Button
-            className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground"
-            type="button"
-            size="sm"
-            variant="ghost"
-            title={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
-            aria-label={explanationStatus === "loading" ? t("explain.loading") : explanationStatus === "open" ? t("explain.hide") : t("explain.button")}
-            aria-expanded={explanationStatus === "open"}
-            disabled={!currentLine || explanationStatus === "loading"}
-            onClick={toggleExplanation}
-          >
-            {explanationStatus === "loading"
-              ? <Loader2 className="size-4 animate-spin" aria-hidden="true"/>
-              : explanationStatus === "open"
-                ? <ChevronUp className="size-4" aria-hidden="true"/>
-                : <Sparkles className="size-4" aria-hidden="true"/>}
-          </Button>
           <Button
             className="size-8 min-w-8 p-0 text-muted-foreground hover:text-foreground"
             type="button"

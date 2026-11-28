@@ -5,12 +5,12 @@ import { LanguageProvider } from "@/context/LanguageContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { DailyWordCounterProvider } from "@/context/DailyWordCounterContext";
 import FloatingDailyCounter from "@/components/FloatingDailyCounter";
-import type { Language } from "@/types/game";
+import type { LanguageSettings } from "@/types/game";
 
-export default function Providers({ children, initialUiLanguage }: { children: ReactNode; initialUiLanguage: Language }) {
+export default function Providers({ children, initialSettings }: { children: ReactNode; initialSettings: LanguageSettings }) {
   return (
     <AuthProvider>
-      <LanguageProvider initialUiLanguage={initialUiLanguage}>
+      <LanguageProvider initialSettings={initialSettings}>
         <DailyWordCounterProvider>
           {children}
           <Suspense fallback={null}>

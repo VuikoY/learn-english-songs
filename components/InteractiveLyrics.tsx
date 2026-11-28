@@ -2,7 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronUp, Globe, Loader2, Maximize2, Minimize2, Play, Sparkles } from "lucide-react";
+import { Globe, Loader2, Maximize2, Minimize2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ExplanationCard, { ExplanationSkeleton, StreamingExplanation } from "@/components/ExplanationCard";
 import { useLanguage } from "@/context/LanguageContext";
@@ -357,30 +357,6 @@ export default function InteractiveLyrics({
                     ? <Loader2 className="size-4 animate-spin" aria-hidden="true"/>
                     : <Globe className="size-4" aria-hidden="true"/>}
                 </Button>
-                {showAllLines ? (
-                  <Button type="button" variant="ghost" size="sm" aria-label={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")} title={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")} className="h-8 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground" disabled={state?.kind === "loading"} onClick={() => void handleExplain(index)}>
-                    {state?.kind === "loading" ? <Loader2 className="size-4 animate-spin" aria-hidden="true"/> : state?.kind === "open" ? <ChevronUp className="size-4" aria-hidden="true"/> : <Sparkles className="size-4" aria-hidden="true"/>}
-                  </Button>
-                ) : isActive && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    title={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")}
-                    aria-label={state?.kind === "loading" ? t("explain.loading") : state?.kind === "open" ? t("explain.hide") : t("explain.button")}
-                    className="h-8 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-                    disabled={state?.kind === "loading"}
-                    onClick={() => void handleExplain(index)}
-                  >
-                    {state?.kind === "loading" ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true"/>
-                    ) : state?.kind === "open" ? (
-                      <ChevronUp className="size-4" aria-hidden="true"/>
-                    ) : (
-                      <Sparkles className="size-4" aria-hidden="true"/>
-                    )}
-                  </Button>
-                )}
               </div>
 
               {expandedTranslations[id] && (

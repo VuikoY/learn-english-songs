@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import "./globals.css";
 import Header from "@/components/Header";
 import Providers from "./providers";
-import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_COOKIE } from "@/lib/i18n/settings";
-import { isLanguage } from "@/types/game";
+import { LANGUAGE_SETTINGS_COOKIE, UI_LANGUAGE_COOKIE } from "@/lib/i18n/settings";
+import { getInitialLanguages } from "@/lib/i18n/initial-languages";
 
 export const instant = false;
 
@@ -34,8 +34,13 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const cookieStore = await cookies();
-  const cookieLanguage = cookieStore.get(UI_LANGUAGE_COOKIE)?.value;
-  const initialUiLanguage = isLanguage(cookieLanguage) ? cookieLanguage : DEFAULT_UI_LANGUAGE;
+  const requestHeaders = await headers();
+  const initialSettings = getInitialLanguages({
+    settingsCookie: cookieStore.get(LANGUAGE_SETTINGS_COOKIE)?.value,
+    uiLanguageCookie: cookieStore.get(UI_LANGUAGE_COOKIE)?.value,
+    acceptLanguage: requestHeaders.get("accept-language") ?? undefined,
+  });
+  const initialUiLanguage = initialSettings.uiLanguage;
 
   return (
     <html
@@ -44,7 +49,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <Providers initialUiLanguage={initialUiLanguage}>
+        <Providers initialSettings={initialSettings}>
           <Header />
           {children}
         </Providers>

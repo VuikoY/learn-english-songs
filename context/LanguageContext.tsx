@@ -1,15 +1,16 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DICTIONARY, type TranslationKey } from "@/lib/i18n/dictionary";
-import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_COOKIE } from "@/lib/i18n/settings";
+import { LANGUAGE_SETTINGS_COOKIE, UI_LANGUAGE_COOKIE } from "@/lib/i18n/settings";
+import { getInitialLanguages } from "@/lib/i18n/initial-languages";
 import { isLanguage, isLearningLanguage, type Language, type LanguageSettings, type LearningLanguage } from "@/types/game";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthState } from "@/context/AuthContext";
 
 const GUEST_KEY = "lingo-clips:language-settings";
 const ACCOUNT_PREFIX = "lingo-clips:language-settings:v2:user:";
-const DEFAULT_SETTINGS: LanguageSettings = { uiLanguage: DEFAULT_UI_LANGUAGE, targetLanguage: "ru", sourceLanguage: "en" };
+const DEFAULT_SETTINGS = getInitialLanguages();
 type TranslateVars = Record<string, string | number>;
 
 type LanguageContextValue = LanguageSettings & {
@@ -24,13 +25,8 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 function parseSettings(raw: string | null): LanguageSettings | null {
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as Record<string, unknown>;
-    const normalize = (item: unknown, fallback: Language) => isLanguage(item) ? item : fallback;
-    return {
-      uiLanguage: normalize(value.uiLanguage, DEFAULT_SETTINGS.uiLanguage),
-      targetLanguage: normalize(value.targetLanguage, DEFAULT_SETTINGS.targetLanguage),
-      sourceLanguage: isLearningLanguage(value.sourceLanguage) ? value.sourceLanguage : DEFAULT_SETTINGS.sourceLanguage,
-    };
+    const value = JSON.parse(raw) as Partial<LanguageSettings>;
+    return getInitialLanguages({ savedSettings: value });
   } catch { return null; }
 }
 
@@ -54,13 +50,22 @@ function persistUiLanguage(language: Language) {
   document.cookie = `${UI_LANGUAGE_COOKIE}=${language}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
 }
 
-export function LanguageProvider({ children, initialUiLanguage }: { children: ReactNode; initialUiLanguage: Language }) {
+function persistLanguageSettings(settings: LanguageSettings) {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${LANGUAGE_SETTINGS_COOKIE}=${encodeURIComponent(JSON.stringify(settings))}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+}
+
+export function LanguageProvider({ children, initialSettings }: { children: ReactNode; initialSettings: LanguageSettings }) {
   const { userId, loading: authLoading } = useAuthState();
-  const [settings, setSettings] = useState<LanguageSettings>(() => ({ ...DEFAULT_SETTINGS, uiLanguage: initialUiLanguage }));
+  const [settings, setSettings] = useState<LanguageSettings>(() => getInitialLanguages({ savedSettings: initialSettings }));
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const [hydratedUserId, setHydratedUserId] = useState<string | null | undefined>(undefined);
   const [cloudWritableUserId, setCloudWritableUserId] = useState<string | null>(null);
   const hydrated = !authLoading && hydratedUserId === userId;
-  const visibleSettings = hydrated || hydratedUserId === undefined ? settings : DEFAULT_SETTINGS;
+  const visibleSettings = hydrated || hydratedUserId === undefined || (!userId && hydratedUserId !== null)
+    ? settings
+    : DEFAULT_SETTINGS;
 
   useEffect(() => {
     if (authLoading) return;
@@ -70,15 +75,23 @@ export function LanguageProvider({ children, initialUiLanguage }: { children: Re
     });
     const hydrate = async () => {
       if (!userId) {
-        let guest = DEFAULT_SETTINGS;
-        try { guest = readGuestSettings() ?? DEFAULT_SETTINGS; } catch { /* Storage may be unavailable. */ }
+        let guest = initialSettings;
+        try {
+          if (hydratedUserId) {
+            guest = getInitialLanguages({ savedSettings: settingsRef.current });
+            localStorage.setItem(GUEST_KEY, JSON.stringify(guest));
+          } else {
+            const savedGuest = readGuestSettings();
+            guest = savedGuest ?? initialSettings;
+          }
+        } catch { /* Storage may be unavailable. */ }
         if (active) { setSettings(guest); setHydratedUserId(null); }
         return;
       }
 
       const client = getSupabaseBrowserClient();
       if (!client) {
-        if (active) { setSettings(DEFAULT_SETTINGS); setHydratedUserId(userId); }
+        if (active) { setSettings(initialSettings); setHydratedUserId(userId); }
         return;
       }
       const { data: { user }, error: authError } = await client.auth.getUser();
@@ -90,15 +103,15 @@ export function LanguageProvider({ children, initialUiLanguage }: { children: Re
 
       let next: LanguageSettings;
       if (!error && row) {
-        next = {
-          uiLanguage: isLanguage(row.ui_language) ? row.ui_language : DEFAULT_SETTINGS.uiLanguage,
-          sourceLanguage: isLearningLanguage(row.source_language) ? row.source_language : DEFAULT_SETTINGS.sourceLanguage,
-          targetLanguage: isLanguage(row.target_language) ? row.target_language : DEFAULT_SETTINGS.targetLanguage,
-        };
+        next = getInitialLanguages({ savedSettings: {
+          uiLanguage: isLanguage(row.ui_language) ? row.ui_language : initialSettings.uiLanguage,
+          sourceLanguage: isLearningLanguage(row.source_language) ? row.source_language : initialSettings.sourceLanguage,
+          targetLanguage: isLanguage(row.target_language) ? row.target_language : initialSettings.targetLanguage,
+        } });
         clearLegacyAccountSettings(userId);
         setCloudWritableUserId(userId);
       } else if (!error && !row) {
-        next = readLegacyAccountSettings(userId) ?? DEFAULT_SETTINGS;
+        next = readLegacyAccountSettings(userId) ?? initialSettings;
         const { error: saveError } = await client.from("user_settings").upsert({
           user_id: userId, ui_language: next.uiLanguage, source_language: next.sourceLanguage,
           target_language: next.targetLanguage, settings_json: next,
@@ -108,13 +121,13 @@ export function LanguageProvider({ children, initialUiLanguage }: { children: Re
           setCloudWritableUserId(userId);
         }
       } else {
-        next = DEFAULT_SETTINGS;
+        next = initialSettings;
       }
       if (active) { setSettings(next); setHydratedUserId(userId); }
     };
     void hydrate();
     return () => { active = false; };
-  }, [authLoading, userId]);
+  }, [authLoading, hydratedUserId, initialSettings, userId]);
 
   // Guest preferences live only in localStorage. Signed-in preferences live only in Supabase.
   useEffect(() => {
@@ -123,8 +136,10 @@ export function LanguageProvider({ children, initialUiLanguage }: { children: Re
   }, [settings, hydrated, userId]);
 
   useEffect(() => {
-    if (hydrated) persistUiLanguage(visibleSettings.uiLanguage);
-  }, [visibleSettings.uiLanguage, hydrated]);
+    if (!hydrated) return;
+    persistUiLanguage(visibleSettings.uiLanguage);
+    persistLanguageSettings(visibleSettings);
+  }, [visibleSettings, hydrated]);
 
   useEffect(() => {
     if (!hydrated || !userId || cloudWritableUserId !== userId) return;
@@ -148,8 +163,17 @@ export function LanguageProvider({ children, initialUiLanguage }: { children: Re
     persistUiLanguage(uiLanguage);
     setSettings((prev) => ({ ...prev, uiLanguage }));
   }, []);
-  const setTargetLanguage = useCallback((targetLanguage: Language) => setSettings((prev) => ({ ...prev, targetLanguage })), []);
-  const setSourceLanguage = useCallback((sourceLanguage: LearningLanguage) => setSettings((prev) => ({ ...prev, sourceLanguage })), []);
+  const setTargetLanguage = useCallback((targetLanguage: Language) => setSettings((prev) => {
+    const sourceLanguage = prev.sourceLanguage === targetLanguage
+      ? targetLanguage === "en" ? "pl" : "en"
+      : prev.sourceLanguage;
+    return { ...prev, targetLanguage, sourceLanguage };
+  }), []);
+  const setSourceLanguage = useCallback((sourceLanguage: LearningLanguage) => setSettings((prev) => {
+    if (sourceLanguage !== prev.targetLanguage) return { ...prev, sourceLanguage };
+    const targetLanguage = sourceLanguage === "en" ? "pl" : "en";
+    return { ...prev, sourceLanguage, targetLanguage };
+  }), []);
 
   const value = useMemo<LanguageContextValue>(() => {
     const dictionary = DICTIONARY[visibleSettings.uiLanguage];
